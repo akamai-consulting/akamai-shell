@@ -17,7 +17,7 @@ const DYNAMIC_COLLECTIONS = [
 ];
 
 module.exports = createApiModule({
-  name: 'IdentityManagement',
+  name: 'IdentityManagementV1',
   prefix: PREFIX,
   queryParameters: CATALOG.queryParameters,
   staticPaths: CATALOG.methodStaticPaths.GET || [],

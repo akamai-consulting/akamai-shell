@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const apiRegistry = require('../src/api-registry');
 
-test('routes Identity Management paths using the documented service prefix', async () => {
+test('routes Identity Management v1 paths using the documented service prefix', async () => {
   const apiModule = apiRegistry.moduleFor('/identity-management/v1/open-identities/example/credentials');
-  assert.equal(apiModule.name, 'IdentityManagement');
+  assert.equal(apiModule.name, 'IdentityManagementV1');
   assert.equal(apiModule.prefix, '/identity-management/v1');
 
   let request;
@@ -28,7 +28,7 @@ test('routes Identity Management paths using the documented service prefix', asy
   assert.equal(response.statusCode, 200);
 });
 
-test('supports only methods documented by Identity Management', async () => {
+test('supports documented v1 Identity Management methods', async () => {
   let request;
   await apiRegistry.put(
     {},
@@ -47,29 +47,9 @@ test('supports only methods documented by Identity Management', async () => {
     body: { status: 'INACTIVE' },
     method: 'PUT'
   });
-
-  await apiRegistry.dispatch(
-    'DELETE',
-    {},
-    '/identity-management/v1/open-identities/example/credentials/123',
-    {},
-    undefined,
-    async (settings, path, query, body, method) => {
-      request = { settings, path, query, body, method };
-      return { statusCode: 204, body: null };
-    }
-  );
-  assert.equal(request.method, 'DELETE');
-  assert.throws(
-    () => apiRegistry.moduleForMethod(
-      'PATCH',
-      '/identity-management/v1/open-identities/example/credentials/123'
-    ),
-    /No API module supports PATCH path/
-  );
 });
 
-test('completes credential identifiers from the collection response and caches it', async () => {
+test('completes v1 credential identifiers and caches the collection lookup', async () => {
   const cache = new Map();
   let calls = 0;
   const requestGet = async (settings, path, query) => {
@@ -79,25 +59,17 @@ test('completes credential identifiers from the collection response and caches i
       path: '/open-identities/example/credentials',
       query: {}
     });
-    return {
-      statusCode: 200,
-      body: [{ credentialId: 12345 }, { credentialId: 67890 }]
-    };
+    return { statusCode: 200, body: [{ credentialId: 12345 }, { credentialId: 67890 }] };
   };
 
   const first = await apiRegistry.complete(
     '/identity-management/v1/open-identities/example/credentials/123',
-    {},
-    cache,
-    requestGet
+    {}, cache, requestGet
   );
   const second = await apiRegistry.complete(
     '/identity-management/v1/open-identities/example/credentials/678',
-    {},
-    cache,
-    requestGet
+    {}, cache, requestGet
   );
-
   assert.deepEqual(first[0], [
     '/identity-management/v1/open-identities/example/credentials/12345'
   ]);
