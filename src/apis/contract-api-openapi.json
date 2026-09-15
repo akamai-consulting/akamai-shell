@@ -1,0 +1,60 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Contract API",
+    "version": "v1"
+  },
+  "paths": {
+    "/contracts/identifiers": {
+      "get": {
+        "parameters": [
+          {
+            "name": "depth",
+            "in": "query"
+          }
+        ]
+      }
+    },
+    "/contracts/{contractId}/products/summaries": {
+      "get": {
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "name": "to",
+            "in": "query"
+          }
+        ]
+      }
+    },
+    "/reportingGroups": {
+      "get": {
+        "parameters": [
+          {
+            "name": "depth",
+            "in": "query"
+          }
+        ]
+      }
+    },
+    "/reportingGroups/identifiers": {
+      "get": {}
+    },
+    "/reportingGroups/{reportingGroupId}/products/summaries": {
+      "get": {
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "name": "to",
+            "in": "query"
+          }
+        ]
+      }
+    }
+  }
+}
