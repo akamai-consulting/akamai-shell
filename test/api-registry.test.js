@@ -49,7 +49,17 @@ test('routes Cloudlets paths to the Cloudlets module', async () => {
       assert.equal(apiRegistry.moduleFor('/config-dns/v2/zones').name, 'EdgeDns');
       assert(apiRegistry.queryParameters().includes('dnsSecStatus'));
     });
+
   assert.deepEqual(request, { settings: {}, path: '/policies', query: { cloudletId: '3' } });
+});
+
+test('discovers and routes JWT API by service prefix', () => {
+  const jwtApi = apiRegistry.moduleFor('/jwt-api/v1/key-collections');
+  assert.equal(jwtApi.name, 'JwtApi');
+  assert.equal(jwtApi.prefix, '/jwt-api/v1');
+  assert(jwtApi.methodPaths.GET.includes('/key-collections'));
+  assert(jwtApi.methodPaths.POST.includes('/key-collections'));
+  assert(apiRegistry.queryParameters().includes('collectionId'));
 });
 
 test('rejects paths when no API module supports them', () => {
@@ -104,4 +114,66 @@ test('completes POST paths from the command root', async () => {
   assert(candidates.includes('/edge-diagnostics/v1/curl'));
   assert(candidates.includes('/edge-diagnostics/v1/locate-ip'));
   assert(!candidates.includes('/edge-diagnostics/v1/edge-locations'));
+});
+
+test('routes JWT API POST requests and preserves response status and body', async () => {
+  let request;
+  const response = await apiRegistry.post(
+    {},
+    '/jwt-api/v1/key-collections',
+    {},
+    { name: 'example' },
+    async (settings, path, query, body, method) => {
+      request = { settings, path, query, body, method };
+      return { statusCode: 201, body: { id: 12 } };
+    }
+  );
+
+  assert.deepEqual(request, {
+    settings: {},
+    path: '/key-collections',
+    query: {},
+    body: { name: 'example' },
+    method: 'POST'
+  });
+  assert.deepEqual(response, { statusCode: 201, body: { id: 12 } });
+  assert.throws(
+    () => apiRegistry.put({}, '/jwt-api/v1/key-collections', {}, { name: 'example' }),
+    /No API module supports PUT path/
+  );
+});
+
+test('completes JWT API collection and version identifiers', async () => {
+  const requests = [];
+  const requestGet = async (settings, path) => {
+    requests.push(path);
+    if (path === '/key-collections') {
+      return { statusCode: 200, body: [{ id: 12 }, { id: 15 }] };
+    }
+    return { statusCode: 200, body: { versions: [{ id: 11 }, { id: 12 }] } };
+  };
+  const cache = new Map();
+
+  const [collectionCandidates] = await apiRegistry.complete(
+    '/jwt-api/v1/key-collections/',
+    {},
+    cache,
+    requestGet
+  );
+  assert.deepEqual(collectionCandidates, [
+    '/jwt-api/v1/key-collections/12',
+    '/jwt-api/v1/key-collections/15'
+  ]);
+
+  const [versionCandidates] = await apiRegistry.complete(
+    '/jwt-api/v1/key-collections/12/versions/',
+    {},
+    cache,
+    requestGet
+  );
+  assert.deepEqual(versionCandidates, [
+    '/jwt-api/v1/key-collections/12/versions/11',
+    '/jwt-api/v1/key-collections/12/versions/12'
+  ]);
+  assert.deepEqual(requests, ['/key-collections', '/key-collections/12']);
 });
