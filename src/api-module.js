@@ -66,7 +66,8 @@ function createApiModule({
 
   function supportsMethod(method, apiPath) {
     const normalizedMethod = String(method || '').toUpperCase();
-    return (normalizedMethod in normalizedMethodPaths) &&
+    return supportsPrefix(prefix, apiPath) &&
+      (normalizedMethod in normalizedMethodPaths) &&
       normalizedMethodPaths[normalizedMethod].some((template) =>
         pathMatchesTemplate(relativePath(prefix, apiPath), template));
   }
