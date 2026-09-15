@@ -22,7 +22,8 @@ function createApiModule({
   methodPaths = {},
   methodStaticPaths = {},
   combineStaticCandidates = false,
-  requestHeaders
+  requestHeaders,
+  bodyRequired = {}
 }) {
   const normalizedMethodPaths = Object.fromEntries(
     Object.entries(methodPaths).map(([method, paths]) => [
@@ -114,7 +115,8 @@ function createApiModule({
 
     dispatch(settings, apiPath, method, query = {}, body, requestMethod) {
       const normalizedMethod = method.toUpperCase();
-      if ((normalizedMethod === 'POST' || normalizedMethod === 'PUT') &&
+      if (bodyRequired[normalizedMethod] !== false &&
+          (normalizedMethod === 'POST' || normalizedMethod === 'PUT') &&
           body === undefined) {
         throw new Error(`${normalizedMethod} requires a JSON body`);
       }
