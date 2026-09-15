@@ -17,6 +17,7 @@
 - Cloudlets v2: `/cloudlets/api/v2`
 - Edge Diagnostics v1: `/edge-diagnostics/v1`
 - Edge DNS / Config DNS v2: `/config-dns/v2`
+- DataStream Config API v2: `/datastream-config-api/v2`
 
 GET remains available for operations declared by each module's OpenAPI
 document. Edge Diagnostics v1 additionally supports its OpenAPI-derived POST
@@ -81,6 +82,7 @@ Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
   behaviors, and custom overrides.
 - Cloudlets v3 policy and policy-version completion is supported.
 - Edge DNS zone, proxy, and proxy-zone completion is supported.
+- DataStream group and stream identifier completion is supported.
 - OpenAPI operation metadata is loaded by `src/openapi-catalog.js`; dynamic
   identifiers and API-specific contextual validation remain local to modules.
 
