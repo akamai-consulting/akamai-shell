@@ -83,7 +83,7 @@ function validateRequiredParameters(apiPath, query) {
 
 async function get(settings, apiPath, query = {}, clientFactory = createClient) {
   const normalizedPath = normalizePath(apiPath);
-  const qs = { ...query };
+  const qs = { ...(settings.parameterDefaults || {}), ...query };
   const supportsContext = CONTEXT_QUERY_PATHS.some((path) =>
     normalizedPath === path || normalizedPath.startsWith(`${path}/`));
   if (settings.accountSwitchKey && qs.accountSwitchKey === undefined) {
