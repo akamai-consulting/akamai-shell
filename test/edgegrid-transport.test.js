@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { request } = require('../src/edgegrid-transport');
+const { request, requestMethod } = require('../src/edgegrid-transport');
 
 test('applies accountSwitchKey and parameter defaults to generic API requests', async () => {
   let sent;
@@ -24,5 +24,40 @@ test('applies accountSwitchKey and parameter defaults to generic API requests', 
   assert.deepEqual(sent.qs, {
     pageSize: '10',
     accountSwitchKey: '1-ABC:1-DEF'
+  });
+});
+
+test('constructs signed arbitrary-method JSON requests with response metadata', async () => {
+  let sent;
+  const response = await requestMethod({
+    edgerc: '/tmp/test-edgerc',
+    edgercSection: 'diagnostics',
+    accountSwitchKey: '1-ACCOUNT',
+    parameterDefaults: { region: 'us' }
+  }, '/curl', 'post', { region: 'eu' }, { url: 'https://example.test', follow: true },
+  () => ({
+    auth(value) {
+      sent = value;
+      return this;
+    },
+    send(callback) {
+      callback(null, { status: 202, headers: { location: '/requests/1' } }, '{"requestId":"1"}');
+    }
+  }), '/edge-diagnostics/v1');
+
+  assert.deepEqual(sent, {
+    path: '/edge-diagnostics/v1/curl',
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    qs: { region: 'eu', accountSwitchKey: '1-ACCOUNT' },
+    body: { url: 'https://example.test', follow: true }
+  });
+  assert.deepEqual(response, {
+    statusCode: 202,
+    headers: { location: '/requests/1' },
+    body: { requestId: '1' }
   });
 });

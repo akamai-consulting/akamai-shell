@@ -2,10 +2,10 @@
 
 ## Purpose
 
-This project should provide an interactive, read-only console shell for the
-Akamai Property Manager API (PAPI). It is a sample application intended to
-demonstrate direct HTTP API access rather than access through a
-Property Manager wrapper or domain-specific client library.
+This project should provide an interactive console shell for Akamai APIs,
+initially including Property Manager (PAPI). It is a sample
+application intended to demonstrate direct HTTP API access rather than access
+through a Property Manager wrapper or domain-specific client library.
 
 The project is currently a Node.js CommonJS application. Keep the executable
 entry point consistent with `package.json` (`src/main.js`). API-specific
@@ -16,7 +16,8 @@ REPL should not contain endpoint-specific request or completion logic.
 
 - Use the Property Manager API documented at
   <https://techdocs.akamai.com/property-mgr/reference/api-summary>.
-- The API base path is `/papi/v1`; the host comes from the selected EdgeGrid
+- The PAPI base path is `/papi/v1`; other API modules provide their own
+  documented service prefixes. The host comes from the selected EdgeGrid
   credential section.
 - Construct requests with a generic HTTP client and parse the HTTP responses
   in the application.
@@ -45,9 +46,14 @@ prompt> get /papi/v1/edgehostnames/<TAB>
 
 The initial command grammar should include:
 
-- `get <api-path> [query parameters]` for read-only HTTP GET requests.
+- `get [-f <path>] <api-path> [query parameters]` for read-only HTTP GET
+  requests. With `-f`, formatted JSON output is written to the file.
   API paths include their service prefix, such as `/papi/v1/...` or
   `/cloudlets/v3/...`.
+- `post [-f <path>] <api-path> [body arguments]` and
+  `put [-f <path>] <api-path> [body arguments]` for method-qualified JSON
+  writes. Body arguments use `name=value` for strings and `name:=value` for
+  JSON values. With `-f`, the JSON body is read from the file.
 - `set <name> <value>` for global settings.
 - `show` or an equivalent command for displaying non-sensitive settings.
 - `help` and `exit`/`quit`.
@@ -61,8 +67,8 @@ request.
 Completion is a core feature, not merely static command help. It should
 support:
 
-1. Static API path segments and operation structure derived from the checked-in
-   OpenAPI references under `ref/akamai-apis/apis/papi/v1/`.
+1. Static API path segments, HTTP methods, and query parameters derived from
+   the checked-in OpenAPI documents under `ref/akamai-apis/apis/`.
 2. Dynamic path values such as property IDs, edge hostname IDs, versions, and
    other identifiers.
 3. Fetching candidates by calling the relevant parent collection endpoint,
@@ -77,12 +83,15 @@ Completion requests must use the same generic HTTP request and response
 handling path as normal `get` commands. They must not mutate Akamai
 configuration.
 
-## Read-only scope
+## Operation scope
 
-Only GET operations should be enabled initially. Do not implement POST, PUT,
-PATCH, or DELETE commands, and do not provide activation or deactivation
-operations until the project requirements explicitly expand beyond read-only
-access.
+GET operations remain available across the registered API prefixes. The Edge
+Diagnostics module additionally supports the POST operations declared in its
+OpenAPI document. PUT is implemented by the generic parser, registry, and transport
+layers, but no currently registered module claims a PUT endpoint. Unsupported
+method/path combinations must fail explicitly; do not silently route them as
+GET requests. PATCH, DELETE, activation, and deactivation workflows remain
+unsupported.
 
 Likely useful read operations include:
 
@@ -166,22 +175,29 @@ Use small modules with explicit boundaries:
   headers; resolves the configured EdgeGrid credentials; signs the request;
   sends it through a generic HTTP client; and returns status, headers, and body.
   This layer must not contain Property Manager-specific business logic.
-- **API modules and registry:** Each API module owns its endpoint catalog,
-  path matching, request validation, response metadata, and dynamic completion.
-  The registry automatically loads modules from `src/apis/` and selects them
-  from the requested path. New modules must be addable without changing REPL
-  command parsing or query-parameter lists.
-- The current registered modules are `PropertyManager` and read-only
-  `Cloudlets`. Keep method support restricted to GET until write operations
-  are explicitly requested.
+- **API modules and registry:** `ref/akamai-apis` is the static source of
+  truth for OpenAPI operation paths, methods, intermediate completion paths,
+  and query parameters. Each API module keeps only API-specific validation,
+  transport behavior, and dynamic completion descriptors locally. The
+  registry automatically loads modules from `src/apis/` and routes
+  API-qualified paths. Shared prefix matching, path conversion, static
+  completion, dynamic lookups, caching, and candidate formatting live in
+  `src/api-module.js` and `src/path-completion.js`.
+  New modules must be addable without changing REPL command parsing or
+  registry core code.
+- The current modules are Property Manager, Cloudlets v3, Cloudlets v2, Edge
+  Diagnostics v1, and Edge DNS/Config DNS v2. Modules declare method support
+  separately from their API-prefix support; Edge Diagnostics enables its
+  OpenAPI POST paths while the other modules currently enable GET dispatch.
 - **PAPI transport/catalog layer:** The Property Manager module uses the
-  generic transport and its PAPI endpoint metadata. It is responsible for
-  API-specific discovery, not for hiding request construction or response
-  parsing.
-- **Completion layer:** Uses the catalog for static path completion and the
-  transport layer for dynamic collection lookups. It should return completion
-  candidates separately from normal command output and handle asynchronous
-  lookup failures without crashing the REPL.
+  generic transport through `src/papi-client.js` for PAPI-specific headers,
+  contextual IDs, and required-parameter validation. `src/catalog.js` loads
+  static metadata from the PAPI OpenAPI document and retains only PAPI
+  dynamic descriptors and contextual completion behavior locally.
+- **Completion layer:** Uses shared completion helpers for static matching and
+  dynamic collection lookups. Dynamic descriptors use consistent
+  `matches`, `collection`, `prefix`, `response`, and `key` names; modules
+  provide only API-specific catalog and response-shape details.
 - **Output layer:** Formats successful JSON responses for the terminal and
   formats errors consistently while redacting sensitive headers and values.
 
@@ -216,14 +232,20 @@ Implement the project in the following phases:
    - Ensure the PAPI base path and required headers are applied according to
      the API definition.
 
-4. **Build API metadata and static completion**
-   - Load the PAPI OpenAPI source from `ref/akamai-apis/apis/papi/v1/`.
-   - Resolve local references and create an endpoint catalog for GET
-     operations, path templates, path parameters, and query parameters.
+4. **Implement method-qualified JSON writes**
+   - Parse `post` and `put` commands with HTTPie-style JSON body arguments.
+   - Route only to modules that declare the requested method and path.
+   - Preserve EdgeGrid signing, query/default/account-switch-key handling,
+     response status, headers, and body parsing.
+
+5. **Build API metadata and static completion**
+   - Load the service OpenAPI JSON from `ref/akamai-apis/apis/<service>/`.
+   - Resolve local references and create endpoint catalogs for HTTP methods,
+     operation paths, intermediate completion paths, and query parameters.
    - Add completion for command names, static path segments, and supported
      parameter positions.
 
-5. **Add dynamic completion**
+6. **Add dynamic completion**
    - Identify the collection endpoint needed for the currently incomplete
      path, such as `GET /edgehostnames` for
      `/edgehostnames/<partial-value>`.
@@ -235,16 +257,16 @@ Implement the project in the following phases:
      report lookup failures clearly and fall back to static completion when
      possible.
 
-6. **Harden and document the sample**
+7. **Harden and document the sample**
    - Test command parsing, settings, path validation, endpoint resolution,
      response parsing, redaction, and completion with mocked transport data.
    - Exercise at least one live read manually only when valid local credentials
      are available; never add those credentials or responses containing secrets
      to the repository.
    - Document installation, startup, `.edgerc` setup, supported commands,
-     completion behavior, and current read-only limitations.
+     completion behavior, and the currently declared write-method limitations.
 
-Do not broaden the implementation to write operations, activation workflows,
-or a general-purpose API client during these phases. Any such expansion should
-first update this document and define the corresponding safety and confirmation
-requirements.
+Do not broaden the implementation beyond declared API metadata, generic
+method-aware transport, and JSON write commands. Any activation workflow or
+other mutation should first update this document and define corresponding
+safety and confirmation requirements.

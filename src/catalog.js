@@ -1,76 +1,19 @@
 'use strict';
 
 const path = require('path');
+const { loadOpenApiCatalog } = require('./openapi-catalog');
 const {
   staticCandidates,
   dynamicCollectionFor,
   dynamicCandidates: completeDynamicCandidates
 } = require('./path-completion');
 
-const STATIC_PATHS = [
-  '/build',
-  '/groups',
-  '/contracts',
-  '/products',
-  '/products/{productId}/mapping-use-cases',
-  '/cpcodes',
-  '/cpcodes/',
-  '/cpcodes/{cpcodeId}',
-  '/edgehostnames',
-  '/edgehostnames/',
-  '/edgehostnames/{edgeHostnameId}',
-  '/hostnames',
-  '/hostnames/{hostname}/audit-history',
-  '/includes',
-  '/includes/{includeId}',
-  '/includes/{includeId}/activations',
-  '/includes/{includeId}/activations/{activationId}',
-  '/includes/{includeId}/parents',
-  '/includes/{includeId}/versions',
-  '/includes/{includeId}/versions/latest',
-  '/includes/{includeId}/versions/{includeVersion}',
-  '/includes/{includeId}/versions/{includeVersion}/available-behaviors',
-  '/includes/{includeId}/versions/{includeVersion}/available-criteria',
-  '/includes/{includeId}/versions/{includeVersion}/rules',
-  '/includes/validation-results/{activationId}/properties/{propertyId}/versions/{propertyVersion}',
-  '/custom-behaviors',
-  '/custom-behaviors/{behaviorId}',
-  '/custom-overrides',
-  '/custom-overrides/{overrideId}',
-  '/client-settings',
-  '/rule-formats',
-  '/schemas/products/{productId}/{ruleFormat}',
-  '/schemas/request/{filename}',
-  '/bulk/activations',
-  '/bulk/activations/{bulkActivationId}',
-  '/bulk/property-version-creations',
-  '/bulk/property-version-creations/{bulkCreateId}',
-  '/bulk/rules-patch-requests',
-  '/bulk/rules-patch-requests/{bulkPatchId}',
-  '/bulk/rules-search-requests',
-  '/bulk/rules-search-requests-synch',
-  '/bulk/rules-search-requests/{bulkSearchId}',
-  '/search/find-by-value',
-  '/properties',
-  '/properties/',
-  '/properties/{propertyId}',
-  '/properties/{propertyId}/versions',
-  '/properties/{propertyId}/versions/',
-  '/properties/{propertyId}/versions/latest',
-  '/properties/{propertyId}/versions/{propertyVersion}',
-  '/properties/{propertyId}/activations',
-  '/properties/{propertyId}/activations/{activationId}',
-  '/properties/{propertyId}/hostname-activations',
-  '/properties/{propertyId}/hostname-activations/{hostnameActivationId}',
-  '/properties/{propertyId}/hostnames',
-  '/properties/{propertyId}/hostnames/diff',
-  '/properties/{propertyId}/versions/{propertyVersion}/available-behaviors',
-  '/properties/{propertyId}/versions/{propertyVersion}/available-criteria',
-  '/properties/{propertyId}/versions/{propertyVersion}/hostnames',
-  '/properties/{propertyId}/versions/{propertyVersion}/includes',
-  '/properties/{propertyId}/versions/{propertyVersion}/rules'
-];
-
+const OPENAPI_CATALOG = loadOpenApiCatalog({ service: 'papi/v1' });
+const STATIC_PATHS = OPENAPI_CATALOG.staticPaths.slice().sort((left, right) => {
+  const leftVersions = left.startsWith('/properties/{propertyId}/versions');
+  const rightVersions = right.startsWith('/properties/{propertyId}/versions');
+  return Number(rightVersions) - Number(leftVersions);
+});
 const DYNAMIC_COLLECTIONS = [
   {
     matches: (input) => /^\/edgehostnames\/[^/]*$/.test(input),
@@ -180,5 +123,9 @@ module.exports = {
   dynamicCandidates,
   referenceRoot,
   staticPaths: STATIC_PATHS,
+  methodPaths: OPENAPI_CATALOG.methodPaths,
+  methodStaticPaths: OPENAPI_CATALOG.methodStaticPaths,
+  queryParameters: OPENAPI_CATALOG.queryParameters,
+  openApiCatalog: OPENAPI_CATALOG,
   dynamicCollections: DYNAMIC_COLLECTIONS
 };

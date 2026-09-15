@@ -4,7 +4,10 @@ const { get } = require('../papi-client');
 const { createApiModule } = require('../api-module');
 const {
   staticPaths,
-  dynamicCollections
+  dynamicCollections,
+  methodPaths,
+  methodStaticPaths,
+  queryParameters
 } = require('../catalog');
 const {
   requestCacheKey,
@@ -12,13 +15,6 @@ const {
 } = require('../path-completion');
 
 const PREFIX = '/papi/v1';
-const QUERY_PARAMETERS = [
-  'accountSwitchKey', 'contractId', 'groupId', 'limit', 'offset', 'sort',
-  'network', 'modifiedSince', 'modifiedNetwork', 'includeHostnames',
-  'includeCertStatus', 'validateRules', 'validateMode', 'dryRun', 'lock',
-  'options', 'hostname', 'cnameTo', 'activatedOn'
-];
-
 const CONTEXT_LOOKUPS = {
   'contract-id': { path: '/contracts', responseKey: 'contracts' },
   'group-id': { path: '/groups', responseKey: 'groups' }
@@ -37,10 +33,13 @@ function contextCandidates(setting, body, partial = '') {
 const PropertyManager = createApiModule({
   name: 'PropertyManager',
   prefix: PREFIX,
-  queryParameters: QUERY_PARAMETERS,
+  queryParameters,
   staticPaths,
   dynamicCollections,
-  request: get
+  request: get,
+  methodPaths: { GET: methodPaths.GET || [] },
+  methodStaticPaths: Object.fromEntries(Object.entries(methodStaticPaths)
+    .filter(([method]) => method !== 'GET'))
 });
 
 PropertyManager.contextCandidates = contextCandidates;

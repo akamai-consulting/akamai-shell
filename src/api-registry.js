@@ -10,8 +10,10 @@ const API_MODULES = fs.readdirSync(path.join(__dirname, 'apis'))
 
 function register(apiModule) {
   if (!apiModule || typeof apiModule.supports !== 'function' ||
-      typeof apiModule.get !== 'function' || typeof apiModule.complete !== 'function') {
-    throw new TypeError('API module must provide supports, get, and complete functions');
+      typeof apiModule.get !== 'function' || typeof apiModule.complete !== 'function' ||
+      typeof apiModule.supportsMethod !== 'function' ||
+      typeof apiModule.dispatch !== 'function') {
+    throw new TypeError('API module must provide supports, supportsMethod, get, dispatch, and complete functions');
   }
   API_MODULES.unshift(apiModule);
 }
@@ -28,8 +30,52 @@ function modulesFor(apiPath) {
   return API_MODULES.filter((candidate) => candidate.supports(apiPath));
 }
 
+function modulesForMethod(method, apiPath) {
+  return API_MODULES.filter((candidate) => candidate.supportsMethod(method, apiPath));
+}
+
+function moduleForMethod(method, apiPath) {
+  const apiModule = modulesForMethod(method, apiPath)[0];
+  if (!apiModule) {
+    if (modulesFor(apiPath).length) {
+      throw new Error(`No API module supports ${method.toUpperCase()} path "${apiPath}"`);
+    }
+    throw new Error(`No API module supports path "${apiPath}"`);
+  }
+  return apiModule;
+}
+
 function get(settings, apiPath, query, requestGet) {
-  return moduleFor(apiPath).get(settings, apiPath, query, requestGet);
+  return moduleForMethod('GET', apiPath).get(settings, apiPath, query, requestGet);
+}
+
+function dispatch(method, settings, apiPath, query = {}, body, requestMethod) {
+  return moduleForMethod(method, apiPath)
+    .dispatch(settings, apiPath, method, query, body, requestMethod);
+}
+
+function post(settings, apiPath, query, body, requestMethod) {
+  return dispatch('POST', settings, apiPath, query, body, requestMethod);
+}
+
+function put(settings, apiPath, query, body, requestMethod) {
+  return dispatch('PUT', settings, apiPath, query, body, requestMethod);
+}
+
+async function completeMethod(method, apiPath, settings, cache, requestGet) {
+  const modules = API_MODULES.filter((candidate) =>
+    (typeof candidate.supportsCompletion === 'function'
+      ? candidate.supportsCompletion(method, apiPath)
+      : candidate.supportsMethod(method, apiPath)));
+  if (!modules.length && method.toUpperCase() === 'GET') {
+    return [[], apiPath];
+  }
+  if (!modules.length) {
+    return [[], apiPath];
+  }
+  const results = await Promise.all(modules.map((apiModule) =>
+    apiModule.completeMethod(method, apiPath, settings, cache, requestGet)));
+  return [[...new Set(results.flatMap(([candidates]) => candidates))], apiPath];
 }
 
 async function complete(apiPath, settings, cache, requestGet) {
@@ -58,9 +104,15 @@ module.exports = {
   API_MODULES,
   register,
   modulesFor,
+  modulesForMethod,
   moduleFor,
+  moduleForMethod,
+  dispatch,
   get,
+  post,
+  put,
   complete,
+  completeMethod,
   completeSetting,
   queryParameters
 };

@@ -60,3 +60,48 @@ test('rejects paths when no API module supports them', () => {
     apiRegistry.API_MODULES.push(...originalModules);
   }
 });
+
+test('routes Edge Diagnostics POST paths without treating them as GET', async () => {
+  let request;
+  const response = await apiRegistry.post({}, '/edge-diagnostics/v1/curl',
+    { accountSwitchKey: 'a' }, { url: 'https://example.test' },
+    async (settings, path, query, body, method) => {
+      request = { settings, path, query, body, method };
+      return { statusCode: 202, body: { accepted: true } };
+    });
+
+  assert.deepEqual(request, {
+    settings: {},
+    path: '/curl',
+    query: { accountSwitchKey: 'a' },
+    body: { url: 'https://example.test' },
+    method: 'POST'
+  });
+  assert.deepEqual(response.body, { accepted: true });
+  assert.throws(
+    () => apiRegistry.post({}, '/edge-diagnostics/v1/curl', {}),
+    /POST requires a JSON body/
+  );
+  assert.throws(
+    () => apiRegistry.put({}, '/edge-diagnostics/v1/curl', {}, { url: 'x' }),
+    /No API module supports PUT path/
+  );
+});
+
+test('completes Edge Diagnostics POST-only paths', async () => {
+  const [candidates, partial] = await apiRegistry.completeMethod(
+    'POST', '/edge-diagnostics/v1/', {}, new Map()
+  );
+  assert.equal(partial, '/edge-diagnostics/v1/');
+  assert(candidates.includes('/edge-diagnostics/v1/curl'));
+  assert(candidates.includes('/edge-diagnostics/v1/esi-debugger-api'));
+  assert(!candidates.includes('/edge-diagnostics/v1/edge-locations'));
+});
+
+test('completes POST paths from the command root', async () => {
+  const [candidates, partial] = await apiRegistry.completeMethod('POST', '/', {}, new Map());
+  assert.equal(partial, '/');
+  assert(candidates.includes('/edge-diagnostics/v1/curl'));
+  assert(candidates.includes('/edge-diagnostics/v1/locate-ip'));
+  assert(!candidates.includes('/edge-diagnostics/v1/edge-locations'));
+});

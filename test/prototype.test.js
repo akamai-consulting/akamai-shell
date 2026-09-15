@@ -10,7 +10,9 @@ const {
   createRepl,
   parseQuery,
   parseGetArguments,
+  parseWriteArguments,
   QUERY_PARAMETER_CANDIDATES,
+  COMMANDS,
   tokenize,
   splitPipeline,
   formatHistory,
@@ -36,11 +38,167 @@ test('parses HTTPie-style query arguments', () => {
     path: '/products',
     query: { contractId: 'ctr_123', limit: '10' }
   });
+
+  test('parses HTTPie-style JSON write body arguments', () => {
+    assert.deepEqual(parseWriteArguments([
+      '/edge-diagnostics/v1/curl?accountSwitchKey=acct',
+      'url=https://example.test',
+      'timeout:=30',
+      'enabled:=true',
+      'headers:={"x-test":["one","two"]}',
+      'message=left==right',
+      'includeBody==true'
+    ], 'POST'), {
+      path: '/edge-diagnostics/v1/curl',
+      query: { accountSwitchKey: 'acct', includeBody: 'true' },
+      body: {
+        url: 'https://example.test',
+        timeout: 30,
+        enabled: true,
+        headers: { 'x-test': ['one', 'two'] },
+        message: 'left==right'
+      }
+    });
+    assert.throws(() => parseWriteArguments(['/curl'], 'PUT'), /PUT requires at least one body/);
+    assert.throws(() => parseWriteArguments(['/curl', 'enabled:=maybe']), /Invalid JSON body value/);
+  });
 });
 
 test('completes HTTPie-style query parameter names', () => {
   assert(QUERY_PARAMETER_CANDIDATES.includes('contractId=='));
   assert(QUERY_PARAMETER_CANDIDATES.includes('groupId=='));
+});
+
+test('completes command names', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-command-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  assert.deepEqual(await repl.complete('po'), [['post'], 'po']);
+  assert(COMMANDS.includes('put'));
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('completes the file option for API commands', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-option-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  assert.deepEqual(await repl.complete('post -'), [['-f'], '-']);
+  const [rootCandidates, rootPartial] = await repl.complete('post ');
+  assert.equal(rootPartial, '/');
+  assert(rootCandidates.includes('/papi/v1/properties'));
+  assert(rootCandidates.includes('/edge-diagnostics/v1/curl'));
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('completes partial API prefixes for API resource commands', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-prefix-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  for (const command of ['get', 'post', 'put']) {
+    assert.deepEqual(await repl.complete(`${command} /edge`), [
+      ['/edge-diagnostics/v1', '/edgekv/v1', '/edgeworkers/v1'],
+      '/edge'
+    ]);
+  }
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('completes partial resource paths for write commands', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-resource-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  assert.deepEqual(await repl.complete('post /edge-diagnostics/v1/err'), [
+    ['/edge-diagnostics/v1/error-translator'],
+    '/edge-diagnostics/v1/err'
+  ]);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('stays silent when a write path has no completion candidates', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-empty-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  assert.deepEqual(await repl.complete('post foo'), [[], 'foo']);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('stays silent when readline completion has no candidates', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-completion-message-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+  output.read();
+
+  await new Promise((resolve, reject) => {
+    repl.rl.completer('get /asd', (error, result) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      assert.deepEqual(result, [[], '/asd']);
+      resolve();
+    });
+  });
+  assert.equal(output.read(), null);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('reads POST bodies from a file and writes GET responses to a file', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-file-option-'));
+  const historyPath = path.join(directory, 'history');
+  const bodyPath = path.join(directory, 'body.json');
+  const responsePath = path.join(directory, 'response.json');
+  fs.writeFileSync(bodyPath, '{"url":"https://example.test","enabled":true}');
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query, body, method) => {
+    requests.push({ requestPath, query, body, method });
+    return { body: { accepted: true } };
+  }, historyPath);
+
+  await repl.execute(`post -f ${bodyPath} /edge-diagnostics/v1/curl`);
+  await repl.execute(`get /edge-diagnostics/v1/edge-locations -f ${responsePath}`);
+  assert.deepEqual(requests[0], {
+    requestPath: '/curl',
+    query: {},
+    body: { url: 'https://example.test', enabled: true },
+    method: 'POST'
+  });
+  assert.equal(fs.readFileSync(responsePath, 'utf8'), '{\n  "accepted": true\n}\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
 });
 
 test('tokenizes quoted shell values', () => {

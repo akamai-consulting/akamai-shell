@@ -1,0 +1,44 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/widgets/{widgetId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/AccountSwitchKey"
+        },
+        {
+          "name": "widgetId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "get": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ]
+      },
+      "post": {
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "AccountSwitchKey": {
+        "name": "accountSwitchKey",
+        "in": "query"
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query"
+      }
+    }
+  }
+}

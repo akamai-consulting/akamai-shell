@@ -1,0 +1,3 @@
+[submodule "ref/akamai-apis"]
+	path = ref/akamai-apis
+	url = https://github.com/akamai/akamai-apis

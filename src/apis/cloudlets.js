@@ -1,21 +1,10 @@
 'use strict';
 
 const { createApiModule } = require('../api-module');
+const { loadOpenApiCatalog } = require('../openapi-catalog');
 
 const PREFIX = '/cloudlets/v3';
-const QUERY_PARAMETERS = [
-  'cloudletId', 'cloudletType', 'includeDeleted', 'includeRules', 'omitRules',
-  'network', 'propertyName', 'page', 'size'
-];
-const STATIC_PATHS = [
-  '/cloudlet-info',
-  '/policies',
-  '/policies/{policyId}',
-  '/policies/{policyId}/versions',
-  '/policies/{policyId}/versions/{version}',
-  '/policies/{policyId}/activations',
-  '/policies/{policyId}/properties'
-];
+const CATALOG = loadOpenApiCatalog({ service: 'cloudlets/v3' });
 const DYNAMIC_COLLECTIONS = [
   {
     matches: (input) => /^\/policies\/[^/]*$/.test(input),
@@ -36,7 +25,10 @@ const DYNAMIC_COLLECTIONS = [
 module.exports = createApiModule({
   name: 'Cloudlets',
   prefix: PREFIX,
-  queryParameters: QUERY_PARAMETERS,
-  staticPaths: STATIC_PATHS,
+  queryParameters: CATALOG.queryParameters,
+  staticPaths: CATALOG.staticPaths,
+  methodPaths: { GET: CATALOG.methodPaths.GET || [] },
+  methodStaticPaths: Object.fromEntries(Object.entries(CATALOG.methodStaticPaths)
+    .filter(([method]) => method !== 'GET')),
   dynamicCollections: DYNAMIC_COLLECTIONS
 });

@@ -20,6 +20,10 @@ const HISTORY_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'history
 const ENV_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'env');
 const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
+const COMMANDS = [
+  'get', 'post', 'put', 'set', 'unset', 'save', 'load', 'show', 'history',
+  'echo', 'help', 'exit', 'quit'
+];
 
 function settingCandidates(token = '') {
   return SETTING_NAMES.filter((name) => name.startsWith(token));
@@ -28,6 +32,13 @@ function settingCandidates(token = '') {
 const HELP = `Commands:
   get <api-path>[?query=value]  Perform a read-only GET request
       name==value ...            HTTPie-style query parameters
+  post [-f <path>] <api-path> [body args]
+                                Perform a POST request with a JSON body
+  put [-f <path>] <api-path> [body args]
+                                Perform a PUT request with a JSON body
+  get [-f <path>] <api-path>   Write the GET response to a file
+      name=value                 String JSON field
+      name:=value                JSON-typed field (number, boolean, object, array, or null)
   set edgerc <path>             Set the EdgeGrid resource file
   set edgerc-section <name>     Set the EdgeGrid credential section
   set account-switch-key <key>  Set the target account switch key
@@ -66,11 +77,29 @@ function parseQuery(apiPath) {
 
 function tokenize(line) {
   const tokens = [];
-  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let match;
-  while ((match = pattern.exec(line)) !== null) {
-    tokens.push(match[1] ?? match[2] ?? match[3]);
+  let token = '';
+  let quote = '';
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote) {
+      if (character === quote) {
+        quote = '';
+      } else {
+        token += character;
+      }
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (/\s/.test(character)) {
+      if (token) {
+        tokens.push(token);
+        token = '';
+      }
+    } else {
+      token += character;
+    }
   }
+  if (quote) throw new Error('Unterminated quoted value');
+  if (token) tokens.push(token);
   return tokens;
 }
 
@@ -86,6 +115,69 @@ function parseGetArguments(tokens) {
     request.query[name] = value;
   }
   return request;
+}
+
+function extractFileOption(tokens, method) {
+  const remaining = [];
+  let filePath;
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] !== '-f') {
+      remaining.push(tokens[index]);
+      continue;
+    }
+    if (filePath !== undefined || tokens[index + 1] === undefined) {
+      throw new Error(`Usage: ${method.toLowerCase()} [-f <path>] <api-path>`);
+    }
+    filePath = expandHome(tokens[index + 1]);
+    index += 1;
+  }
+  return { remaining, filePath };
+}
+
+function parseWriteArguments(tokens, method = 'POST') {
+  if (!tokens.length) throw new Error(`Usage: ${method.toLowerCase()} <api-path> [name=value ...]`);
+  const request = parseQuery(tokens.shift());
+  const body = {};
+  let bodyArgumentCount = 0;
+  for (const argument of tokens) {
+    const firstEquals = argument.indexOf('=');
+    const querySeparator = firstEquals > 0 && argument[firstEquals + 1] === '='
+      ? firstEquals : -1;
+    if (querySeparator > 0) {
+      const name = argument.slice(0, querySeparator);
+      if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name)) {
+        throw new Error(`Invalid query parameter name "${name}"`);
+      }
+      request.query[name] = argument.slice(querySeparator + 2);
+      continue;
+    }
+
+    const jsonSeparator = argument.indexOf(':=');
+    const stringSeparator = firstEquals;
+    const separator = jsonSeparator > 0 ? jsonSeparator : stringSeparator;
+    if (separator < 1) {
+      throw new Error(`Invalid body argument "${argument}". Use name=value or name:=value`);
+    }
+    const name = argument.slice(0, separator);
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
+      throw new Error(`Invalid body field name "${name}"`);
+    }
+    const value = argument.slice(separator + (jsonSeparator > 0 ? 2 : 1));
+    if (jsonSeparator > 0) {
+      try {
+        body[name] = JSON.parse(value);
+      } catch (error) {
+        throw new Error(`Invalid JSON body value for "${name}": ${error.message}`);
+      }
+    } else {
+      body[name] = value;
+    }
+    bodyArgumentCount += 1;
+  }
+  if (!bodyArgumentCount) {
+    throw new Error(`${method.toUpperCase()} requires at least one body argument`);
+  }
+  return { ...request, body };
 }
 
 function splitPipeline(line) {
@@ -279,7 +371,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     if (!tokens.length) return true;
     const command = tokens.shift().toLowerCase();
     if (pipeline !== null && command !== 'get') {
-      throw new Error('Pipelines are supported only after get commands');
+      throw new Error('Pipelines are supported only after get commands; post and put do not support pipelines');
     }
 
     if (command === 'exit' || command === 'quit') return false;
@@ -379,17 +471,46 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       cache.clear();
       return true;
     }
-    if (command !== 'get') {
-      throw new Error('Usage: get <api-path> [name==value ...]');
+    if (command !== 'get' && command !== 'post' && command !== 'put') {
+      throw new Error('Usage: get|post|put [-f <path>] <api-path> [...]');
     }
 
-    const request = parseGetArguments(tokens);
+    const expandVariable = (value) =>
+      value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, variable) => variables[variable] ?? '');
+    const fileOption = extractFileOption(tokens, command);
+    const requestTokens = command === 'get'
+      ? fileOption.remaining
+      : fileOption.remaining.map(expandVariable);
+    const request = command === 'get'
+      ? parseGetArguments(requestTokens)
+      : fileOption.filePath === undefined
+        ? parseWriteArguments(requestTokens, command.toUpperCase())
+        : parseGetArguments(requestTokens);
+    if (command !== 'get' && fileOption.filePath !== undefined) {
+      try {
+        request.body = JSON.parse(fs.readFileSync(fileOption.filePath, 'utf8'));
+      } catch (error) {
+        throw new Error(`Unable to read JSON body file ${fileOption.filePath}: ${error.message}`, {
+          cause: error
+        });
+      }
+    }
     request.query = Object.fromEntries(Object.entries(request.query).map(([name, value]) => [
       name,
       value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, variable) => variables[variable] ?? '')
     ]));
-    const response = await apiRegistry.get(settings, request.path, request.query, requestGet);
+    const response = command === 'get'
+      ? await apiRegistry.get(settings, request.path, request.query, requestGet)
+      : await apiRegistry.dispatch(command.toUpperCase(), settings, request.path,
+        request.query, request.body, requestGet);
     const outputBody = bodyText(response.body);
+    if (command === 'get' && fileOption.filePath !== undefined) {
+      if (pipeline !== null) {
+        throw new Error('GET file output cannot be combined with a pipeline');
+      }
+      fs.writeFileSync(fileOption.filePath, `${outputBody}\n`, { mode: 0o600 });
+      return true;
+    }
     if (pipeline !== null) {
       if (!pipeline) throw new Error('Pipeline command cannot be empty');
       await runShellCommand(pipeline, `${outputBody}\n`, output);
@@ -400,6 +521,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   async function complete(line) {
+    if (/^\S*$/.test(line)) {
+      return [COMMANDS.filter((command) => command.startsWith(line)), line];
+    }
     if (/^set\s*$/.test(line)) {
       return [SETTING_NAMES, ''];
     }
@@ -414,15 +538,23 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const token = setMatch[1];
       return [settingCandidates(token), token];
     }
-    const queryMatch = line.match(/^get\s+\S+\s+(\S*)$/);
+    const optionMatch = line.match(/^(get|post|put)\s+(-\S*)$/);
+    if (optionMatch) {
+      const token = optionMatch[2];
+      return [['-f'].filter((option) => option.startsWith(token)), token];
+    }
+    const queryMatch = line.match(/^(get|post|put)\s+\S+\s+(\S*)$/);
     if (queryMatch) {
-      const token = queryMatch[1];
+      const token = queryMatch[2];
       return [QUERY_PARAMETER_CANDIDATES.filter((candidate) => candidate.startsWith(token)), token];
     }
-    const match = line.match(/^get\s+(\S*)$/);
+    const match = line.match(/^(get|post|put)\s+(\S*)$/);
     if (!match) return [[], line];
-    const inputPath = match[1] || '/';
-    return apiRegistry.complete(inputPath, settings, cache, requestGet);
+    const inputPath = match[2] || '/';
+    const result = await apiRegistry.completeMethod(
+      match[1].toUpperCase(), inputPath, settings, cache, requestGet
+    );
+    return result;
   }
 
   rl = readline.createInterface({
@@ -433,7 +565,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     historySize: HISTORY_SIZE,
     removeHistoryDuplicates: true,
     completer(line, callback) {
-      complete(line).then((result) => callback(null, result), (error) => callback(error));
+      complete(line).then((result) => {
+        callback(null, result);
+      }, (error) => callback(error));
     }
   });
   if (input.isTTY && output.isTTY) {
@@ -552,7 +686,9 @@ module.exports = {
   createRepl,
   parseQuery,
   parseGetArguments,
+  parseWriteArguments,
   QUERY_PARAMETER_CANDIDATES,
+  COMMANDS,
   tokenize,
   splitPipeline,
   runShellCommand,

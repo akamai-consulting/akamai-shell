@@ -1,29 +1,10 @@
 'use strict';
 
 const { createApiModule } = require('../api-module');
+const { loadOpenApiCatalog } = require('../openapi-catalog');
 
 const PREFIX = '/cloudlets/api/v2';
-const STATIC_PATHS = [
-  '/cloudlet-info', '/cloudlet-info/{cloudletId}',
-  '/group-info', '/group-info/{groupId}',
-  '/schemas', '/schemas/{schemaName}',
-  '/policies', '/policies/{policyId}',
-  '/policies/{policyId}/versions',
-  '/policies/{policyId}/versions/{version}',
-  '/policies/{policyId}/activations',
-  '/policies/{policyId}/properties',
-  '/properties',
-  '/origins', '/origins/{originId}',
-  '/origins/{originId}/versions',
-  '/origins/{originId}/versions/{version}',
-  '/origins/{originId}/activations',
-  '/origins/{originId}/activations/{activationId}'
-];
-const QUERY_PARAMETERS = [
-  'cloudletId', 'cloudletType', 'includeDeleted', 'includeRules', 'omitRules',
-  'network', 'propertyName', 'offset', 'pageSize', 'async', 'index', 'type',
-  'validate', 'version'
-];
+const CATALOG = loadOpenApiCatalog({ service: 'cloudlets/v2' });
 const DYNAMIC_COLLECTIONS = [
   {
     matches: /^\/cloudlet-info\/[^/]*$/,
@@ -58,7 +39,10 @@ const DYNAMIC_COLLECTIONS = [
 module.exports = createApiModule({
   name: 'CloudletsV2',
   prefix: PREFIX,
-  queryParameters: QUERY_PARAMETERS,
-  staticPaths: STATIC_PATHS,
+  queryParameters: CATALOG.queryParameters,
+  staticPaths: CATALOG.staticPaths,
+  methodPaths: { GET: CATALOG.methodPaths.GET || [] },
+  methodStaticPaths: Object.fromEntries(Object.entries(CATALOG.methodStaticPaths)
+    .filter(([method]) => method !== 'GET')),
   dynamicCollections: DYNAMIC_COLLECTIONS
 });

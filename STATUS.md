@@ -2,211 +2,132 @@
 
 ## Current state
 
-- Project: `config-read`, an interactive read-only Akamai Property Manager API
-  (PAPI) shell.
-- Active branch: `feature/api-resource-modules`.
-- Initial commit on `main`:
-  `82742ac Initial working version of Akamai shell`.
-- The API-module refactor changes are currently uncommitted.
-- The supplied `ref/` directories remain untracked because each is an embedded
-  Git repository.
+- Project: `akamai-shell`, an interactive Akamai API shell with method-aware
+  JSON write support.
+- Active branch: `feature/edge-diagnostics-write`.
+- Latest merge commit: `0f1e460 Merge modular API architecture`.
+- `ref/akamai-apis` is a git submodule at the pinned OpenAPI source revision;
+  other supplied `ref/` directories remain unrelated embedded repositories.
+- Runtime: Node.js CommonJS with `akamai-edgegrid@4.0.4`.
 
-## Requirements discussed
+## Supported API modules
 
-The project is intended to:
+- Property Manager: `/papi/v1`
+- Cloudlets v3: `/cloudlets/v3`
+- Cloudlets v2: `/cloudlets/api/v2`
+- Edge Diagnostics v1: `/edge-diagnostics/v1`
+- Edge DNS / Config DNS v2: `/config-dns/v2`
 
-- Access Akamai PAPI through direct HTTP endpoint construction.
-- Use a generic HTTP client for requests and response parsing.
-- Permit an existing EdgeGrid library for request authentication.
-- Read credentials from `~/.edgerc` without storing credentials in the project.
-- Provide an interactive console shell with API-path tab completion.
-- Use dynamic API calls to complete identifiers such as properties and edge
-  hostnames.
-- Remain read-only: only GET operations are enabled.
-- Support shell pipelines, command history, session variables, and persistent
-  parameter defaults.
+GET remains available for operations declared by each module's OpenAPI
+document. Edge Diagnostics v1 additionally supports its OpenAPI-derived POST
+operations. PUT parsing, routing, and transport
+are implemented generically, but no current module claims a PUT endpoint.
+Unsupported method/path combinations fail explicitly. Activation/deactivation
+and mutation confirmation flows remain unsupported.
 
-## Completed
+## Completed capabilities
 
-### Authentication and PAPI requests
+### Requests and authentication
 
-- EdgeGrid authentication using the configured `.edgerc` section.
-- Direct PAPI request paths with the `/papi/v1` prefix.
-- JSON response parsing.
-- HTTP/API error status and response-body reporting.
-- `PAPI-Use-Prefixes: true` request header.
-- Optional `accountSwitchKey` support.
-- Global `contractId`, `groupId`, and other query-parameter defaults.
-- Inline HTTPie-style query syntax:
-
-  ```text
-  get /cpcodes contractId==ctr_123 groupId==grp_456
-  ```
-
-- Inline query parameters override configured defaults.
-- Required-parameter validation for several contextual resources.
-
-The installed `akamai-edgegrid@4.0.4` callback API is wrapped in a Promise by
-the project transport layer.
+- Direct HTTP request construction with EdgeGrid authentication.
+- Configurable `.edgerc` path and credential section.
+- Generic response parsing and HTTP/API error reporting.
+- Global `accountSwitchKey` propagation across API modules.
+- PAPI contextual `contractId` and `groupId` defaults and validation.
+- HTTPie-style inline query parameters, with inline values overriding
+  configured defaults.
 
 ### Interactive shell
 
-Supported commands:
+Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
+`show`, `history`, `echo`, `help`, `exit`, and `quit`.
 
-```text
-get <api-path>[?query=value] [name==value ...]
-set <name> <value>
-set
-unset <name>
-unset -a
-save [-f <path>]
-load [-f <path>]
-show
-history
-echo <text>
-help
-exit
-quit
-```
+- Shell variables support `$name` expansion.
+- `post` and `put` accept HTTPie-like JSON body fields: `name=value` creates a
+  string and `name:=value` parses JSON. Query parameters remain available in
+  the path or as `name==value` arguments. Writes require a body and do not
+  support GET pipelines.
+- `get`, `post`, and `put` accept `-f <path>` before or after the API path.
+  GET writes formatted response JSON to the file; POST and PUT read a JSON
+  request body from the file.
+- Local shell commands can be run with `! <command>`.
+- GET output supports local shell pipelines.
+- Ctrl+R starts reverse incremental history search; repeated Ctrl+R searches
+  older matches.
+- History and environment state use persistent paths under
+  `~/.config/akamai-shell/` with restrictive permissions.
+- Credential secrets are never persisted or displayed.
 
-- Custom variables can be defined and expanded with `$name`.
-- `set` displays current settings and custom variables.
-- `unset` changes only in-session state; it never modifies persisted files.
-- `unset -a` clears all in-session API parameter defaults.
+### Modular completion architecture
 
-### Completion
-
-- Static completion for documented PAPI resource paths.
-- Partial static segment completion, such as:
-
-  ```text
-  get /cp<TAB>
-  ```
-
-  completing to `/cpcodes`.
-
-- Dynamic completion for:
-  - Contract IDs
-  - Group IDs
-  - Property IDs
-  - Property versions
-  - Edge hostname IDs
-  - CP code IDs
-  - Product IDs
-  - Include IDs and include versions
-  - Property activation IDs
-  - Property hostname activation IDs
-  - Custom behavior IDs
-  - Custom override IDs
-- Query-parameter name completion using HTTPie-style `name==` syntax.
-
-### Pipelines and history
-
-- `get` output can be sent to arbitrary local shell pipelines:
-
-  ```text
-  get /groups | jq '.groups.items'
-  ```
-
-- Downstream `EPIPE` errors are handled without terminating the REPL.
-- In-session history supports up/down navigation.
-- `C-r` performs reverse history search; repeated `C-r` searches older matches.
-- History is persisted at:
-  `~/.config/akamai-shell/history`.
-- History is saved on every command line before execution and again on close.
-
-### Parameter environment
-
-- Parameter defaults are persisted at:
-  `~/.config/akamai-shell/env`.
-- `save` and `load` support the default path or `-f <path>`.
-- Environment files are written atomically with restrictive permissions.
-- `set` updates the default parameter environment immediately.
-- Custom shell variables are persisted separately from API parameters. The
-  EdgeGrid file path, selected credential section, account switch key,
-  contextual IDs, and query parameter defaults are also persisted and restored
-  with the parameter environment; credential secrets are never persisted.
-
-### API module structure
-
-- Added an API registry that routes slash-prefixed resource paths to a named
-  API module.
-- Added the `PropertyManager` module, which owns PAPI request delegation and
-  static/dynamic PAPI path completion.
-- Added a read-only `Cloudlets` module for Cloudlets v3 metadata, policies,
-  policy versions, activations, and policy-property associations.
-- Added a separately routed read-only Cloudlets v2 module under
-  `/cloudlets/api/v2`.
-- Added a read-only Edge Diagnostics v1 module under
-  `/edge-diagnostics/v1`, covering all documented GET endpoints.
-- Added a read-only Edge DNS (Config DNS v2) module under
-  `/config-dns/v2`, covering all documented GET endpoints.
-- Kept the existing `get` syntax unchanged while removing API-specific path
-  completion dispatch from the REPL.
-- The registry boundary is ready for additional API modules.
-- Shell completion and GET paths now include the owning API prefix:
-  `/papi/v1/...` for Property Manager and `/cloudlets/v3/...` for Cloudlets.
-- API modules are now discovered automatically from `src/apis/`; each module
-  supplies its own query-parameter metadata.
-- Shared EdgeGrid signing, request construction, and response parsing now live
-  in `src/edgegrid-transport.js`, independent of PAPI or Cloudlets.
-- The shared transport applies persisted parameter defaults and
-  `accountSwitchKey` consistently to all API modules.
+- API modules are discovered automatically from `src/apis/*.js`.
+- API-qualified paths are required for normal requests and completion.
+- The shared module adapter in `src/api-module.js` centralizes API prefix
+  routing, relative-path conversion, method-aware dispatch, method metadata,
+  and candidate restoration.
+- Registered modules must provide `supports`, `supportsMethod`, `get`,
+  `dispatch`, and `complete`; method-specific endpoint metadata controls
+  writes and method-aware completion.
+- Shared completion helpers centralize static matching, dynamic collection
+  lookup, response extraction, filtering, cache keys, and cached requests.
+- Dynamic descriptors use consistent names: `matches`, `collection`, `prefix`,
+  `response`, and `key`.
+- Partial dynamic identifiers only produce matching real values; descendant
+  paths appear after the identifier is complete.
+- Edge DNS combines static operation candidates with dynamic zone/proxy
+  candidates.
+- PAPI completion covers contracts, groups, properties, versions, edge
+  hostnames, CP codes, products, includes, activations, hostnames, custom
+  behaviors, and custom overrides.
+- Cloudlets v3 policy and policy-version completion is supported.
+- Edge DNS zone, proxy, and proxy-zone completion is supported.
+- OpenAPI operation metadata is loaded by `src/openapi-catalog.js`; dynamic
+  identifiers and API-specific contextual validation remain local to modules.
 
 ## Tests and validation
 
-The project has 33 passing Node.js tests covering:
+The project has 65 passing Node.js tests covering GET and write request
+construction, method routing, API-qualified completion, dynamic identifiers,
+persistence, pipelines, shell commands, and reverse history behavior.
 
-- PAPI request construction and query defaults.
-- Required parameter validation.
-- HTTPie-style query parsing.
-- Static and dynamic completion.
-- Pipeline parsing and early-pipe closure.
-- History persistence and reverse search.
-- Custom variables.
-- Parameter environment save/load and `unset -a`.
-
-Run the tests with:
+Run:
 
 ```bash
 npm test
-```
-
-Start the shell with:
-
-```bash
 npm start
 ```
 
-## Not yet done
+## Known limitations
 
-- The API catalog is still manually maintained in `src/catalog.js`; it does
-  not yet load and resolve the PAPI OpenAPI definitions automatically.
-- Cloudlets v3 does not define a standalone `/properties` endpoint; associated
-  properties are available at `/policies/{policyId}/properties`.
-- Completion does not yet cover every dynamic identifier and every
-  operation-specific parameter.
-- Query-parameter validation is based on a partial hand-maintained map rather
-  than all OpenAPI operation metadata.
-- Pagination and automatic following of PAPI `nextLink` values are not
-  implemented.
-- Custom shell variables are session-only and are not persisted.
-- There is no dedicated user-facing README or installation guide yet.
-- Write operations, activation/deactivation, and mutation confirmation flows
-  are intentionally not implemented.
-- The feature-branch changes have not yet been committed.
-- The `ref/` repositories have not been incorporated into the new outer
-  repository; they remain available locally as supplied reference material.
+- Static operation paths, methods, intermediate completion paths, and query
+  parameter names are derived from the checked-in `akamai-apis` OpenAPI JSON
+  documents. Dynamic completion descriptors and PAPI contextual validation
+  remain local API-module behavior.
+- Completion does not cover every dynamic identifier or every
+  operation-specific query parameter.
+- Query-parameter validation is partial rather than generated from OpenAPI
+  operation metadata.
+- Pagination and automatic following of API page links are not implemented.
+- Ambiguous GET paths use module precedence; there is no user-facing API
+  selection syntax.
+- Some completion lookup failures return no dynamic candidates rather than
+  exposing detailed lookup diagnostics.
+- There is no dedicated user-facing README or installation guide.
 
 ## Important files
 
 - `src/main.js` - executable entry point.
-- `src/repl.js` - shell commands, completion, history, variables, pipelines,
-  and persistence.
-- `src/api-registry.js` - API module selection and dispatch.
-- `src/apis/property-manager.js` - Property Manager request and completion
-  behavior.
-- `src/papi-client.js` - EdgeGrid-authenticated PAPI GET transport.
-- `src/catalog.js` - static and dynamic read-only path catalog.
-- `test/` - unit tests.
-- `AGENTS.md` - project requirements, design, and implementation guidance.
+- `src/repl.js` - shell commands, history, variables, pipelines, persistence,
+  readline completion, and reverse search behavior.
+- `src/api-registry.js` - module discovery, routing, completion fan-out, and
+  query metadata aggregation.
+- `src/api-module.js` - shared API-module adapter.
+- `src/openapi-catalog.js` - OpenAPI JSON loader and metadata extractor.
+- `src/path-completion.js` - shared path and dynamic completion helpers.
+- `src/edgegrid-transport.js` - generic method-aware EdgeGrid request and
+  response transport.
+- `src/papi-client.js` - PAPI-specific transport behavior.
+- `src/catalog.js` - PAPI OpenAPI catalog adapter and dynamic descriptors.
+- `src/apis/` - API-specific modules.
+- `test/` - unit and regression tests.
+- `AGENTS.md` - project requirements and design guidance.

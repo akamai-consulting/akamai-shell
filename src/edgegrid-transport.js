@@ -52,16 +52,29 @@ function send(client, request) {
 
 async function request(settings, apiPath, query = {}, clientFactory = createClient,
   prefix = '', headers = { Accept: 'application/json' }) {
+  return requestMethod(settings, apiPath, 'GET', query, undefined, clientFactory, prefix, headers);
+}
+
+async function requestMethod(settings, apiPath, method, query = {}, body,
+  clientFactory = createClient, prefix = '', headers = { Accept: 'application/json' }) {
   const normalizedPath = normalizePath(apiPath);
+  const normalizedMethod = String(method || '').toUpperCase();
+  if (!normalizedMethod) throw new Error('HTTP method is required');
   const qs = { ...(settings.parameterDefaults || {}), ...query };
   if (settings.accountSwitchKey && qs.accountSwitchKey === undefined) {
     qs.accountSwitchKey = settings.accountSwitchKey;
   }
+  const requestHeaders = { ...headers };
+  if (body !== undefined && requestHeaders['Content-Type'] === undefined &&
+      requestHeaders['content-type'] === undefined) {
+    requestHeaders['Content-Type'] = 'application/json';
+  }
   const response = await send(clientFactory(settings), {
     path: `${prefix}${normalizedPath}`,
-    method: 'GET',
-    headers,
-    qs
+    method: normalizedMethod,
+    headers: requestHeaders,
+    qs,
+    ...(body === undefined ? {} : { body })
   });
   return {
     statusCode: response.statusCode,
@@ -70,4 +83,12 @@ async function request(settings, apiPath, query = {}, clientFactory = createClie
   };
 }
 
-module.exports = { request, normalizePath, send, parseBody, createClient };
+module.exports = {
+  request,
+  requestMethod,
+  requestWithMethod: requestMethod,
+  normalizePath,
+  send,
+  parseBody,
+  createClient
+};

@@ -1,5 +1,5 @@
 {
-  "name": "config-read",
+  "name": "akamai-shell",
   "version": "1.0.0",
   "description": "Access Akamai Property Manager API from CLI",
   "license": "ISC",
