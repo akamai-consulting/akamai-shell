@@ -5,8 +5,8 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { get } = require('./papi-client');
-const { pathCandidates, collectionFor, dynamicCandidates } = require('./catalog');
+const { get: papiGet } = require('./papi-client');
+const apiRegistry = require('./api-registry');
 
 const SETTING_NAMES = [
   'edgerc',
@@ -18,29 +18,11 @@ const SETTING_NAMES = [
 const HISTORY_SIZE = 1000;
 const HISTORY_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'history');
 const ENV_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'env');
-const CONTEXT_LOOKUPS = {
-  'contract-id': { path: '/contracts', responseKey: 'contracts' },
-  'group-id': { path: '/groups', responseKey: 'groups' }
-};
-const QUERY_PARAMETER_NAMES = new Set([
-  'accountSwitchKey', 'contractId', 'groupId', 'limit', 'offset', 'sort',
-  'network', 'modifiedSince', 'modifiedNetwork', 'includeHostnames',
-  'includeCertStatus', 'validateRules', 'validateMode', 'dryRun', 'lock',
-  'options', 'hostname', 'cnameTo', 'activatedOn'
-]);
+const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
 
 function settingCandidates(token = '') {
   return SETTING_NAMES.filter((name) => name.startsWith(token));
-}
-
-function contextCandidates(setting, body, partial = '') {
-  const lookup = CONTEXT_LOOKUPS[setting];
-  const items = body && body[lookup.responseKey] && body[lookup.responseKey].items;
-  if (!lookup || !Array.isArray(items)) return [];
-  return items
-    .map((item) => setting === 'contract-id' ? item.contractId : item.groupId)
-    .filter((id) => id && id.toLowerCase().startsWith(partial.toLowerCase()));
 }
 
 const HELP = `Commands:
@@ -58,6 +40,7 @@ const HELP = `Commands:
   save [-f <path>]               Save parameter defaults
   load [-f <path>]               Load parameter defaults
   echo <text>                    Print text with variable expansion
+  ! <shell command>              Run a local shell command
   history                        Show command history
   show                           Show non-secret settings
   help                           Show this help
@@ -183,6 +166,24 @@ function saveParameterDefaults(filePath, defaults) {
   fs.chmodSync(filePath, 0o600);
 }
 
+function loadEnvironment(filePath) {
+  const contents = loadParameterDefaults(filePath);
+  if (!Object.keys(contents).length) {
+    return { parameters: {}, variables: {} };
+  }
+  if (!contents.parameters || typeof contents.parameters !== 'object' ||
+      Array.isArray(contents.parameters) ||
+      !contents.variables || typeof contents.variables !== 'object' ||
+      Array.isArray(contents.variables)) {
+    throw new Error(`Environment file ${filePath} must contain parameters and variables objects`);
+  }
+  return contents;
+}
+
+function saveEnvironment(filePath, parameters, variables) {
+  saveParameterDefaults(filePath, { parameters, variables });
+}
+
 function runShellCommand(command, input, output) {
   return new Promise((resolve, reject) => {
     const child = spawn('/bin/sh', ['-c', command], {
@@ -221,19 +222,22 @@ function runShellCommand(command, input, output) {
   });
 }
 
-function createRepl(output = process.stdout, input = process.stdin, requestGet = get, historyFile = HISTORY_FILE) {
+function createRepl(output = process.stdout, input = process.stdin, requestGet, historyFile = HISTORY_FILE) {
+  const parameterFile = historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env');
+  const environment = loadEnvironment(parameterFile);
+  const parameterDefaults = environment.parameters;
   const settings = {
-    edgerc: `${os.homedir()}/.edgerc`,
-    edgercSection: 'default',
+    edgerc: parameterDefaults.edgerc || `${os.homedir()}/.edgerc`,
+    edgercSection: parameterDefaults.edgercSection || 'default',
     accountSwitchKey: '',
     contractId: '',
     groupId: '',
-    parameterDefaults: loadParameterDefaults(historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env'))
+    parameterDefaults
   };
   settings.accountSwitchKey = settings.parameterDefaults.accountSwitchKey || '';
   settings.contractId = settings.parameterDefaults.contractId || '';
   settings.groupId = settings.parameterDefaults.groupId || '';
-  const variables = {};
+  const variables = { ...environment.variables };
   const cache = new Map();
   let rl;
 
@@ -247,10 +251,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
 
   function persistParameters() {
     try {
-      saveParameterDefaults(
-        historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env'),
-        settings.parameterDefaults
-      );
+      saveEnvironment(parameterFile, settings.parameterDefaults, variables);
     } catch (error) {
       output.write(`Error: ${error.message}\n`);
     }
@@ -258,12 +259,21 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
 
   function applyParameterDefaults(defaults) {
     settings.parameterDefaults = defaults;
+    settings.edgerc = defaults.edgerc || `${os.homedir()}/.edgerc`;
+    settings.edgercSection = defaults.edgercSection || 'default';
     settings.accountSwitchKey = defaults.accountSwitchKey || '';
     settings.contractId = defaults.contractId || '';
     settings.groupId = defaults.groupId || '';
   }
 
   async function execute(line) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.startsWith('!')) {
+      const shellCommand = trimmedLine.slice(1).trim();
+      if (!shellCommand) throw new Error('Usage: ! <shell command>');
+      await runShellCommand(shellCommand, '', output);
+      return true;
+    }
     const [commandLine, pipeline] = splitPipeline(line);
     const tokens = tokenize(commandLine);
     if (!tokens.length) return true;
@@ -293,9 +303,12 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
     if (command === 'save' || command === 'load') {
       const filePath = optionPath(tokens);
       if (command === 'save') {
-        saveParameterDefaults(filePath, settings.parameterDefaults);
+        saveEnvironment(filePath, settings.parameterDefaults, variables);
       } else {
-        applyParameterDefaults(loadParameterDefaults(filePath));
+        const loaded = loadEnvironment(filePath);
+        applyParameterDefaults(loaded.parameters);
+        Object.keys(variables).forEach((name) => delete variables[name]);
+        Object.assign(variables, loaded.variables);
         cache.clear();
       }
       return true;
@@ -349,13 +362,17 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error('Invalid variable name');
         variables[name] = value;
       }
-      if (SETTING_NAMES.includes(name) && ['accountSwitchKey', 'contractId', 'groupId'].includes(
-        name === 'account-switch-key' ? 'accountSwitchKey'
+      if (SETTING_NAMES.includes(name) && ['edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId'].includes(
+        name === 'edgerc' ? 'edgerc'
+          : name === 'account-switch-key' ? 'accountSwitchKey'
           : name === 'contract-id' ? 'contractId'
-            : name === 'group-id' ? 'groupId' : ''
+            : name === 'group-id' ? 'groupId'
+              : name === 'edgerc-section' ? 'edgercSection' : ''
       )) {
-        const parameterName = name === 'account-switch-key' ? 'accountSwitchKey'
-          : name === 'contract-id' ? 'contractId' : 'groupId';
+        const parameterName = name === 'edgerc' ? 'edgerc'
+          : name === 'account-switch-key' ? 'accountSwitchKey'
+          : name === 'contract-id' ? 'contractId'
+            : name === 'group-id' ? 'groupId' : 'edgercSection';
         settings.parameterDefaults[parameterName] = value;
       }
       persistParameters();
@@ -371,7 +388,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
       name,
       value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, variable) => variables[variable] ?? '')
     ]));
-    const response = await get(settings, request.path, request.query);
+    const response = await apiRegistry.get(settings, request.path, request.query, requestGet);
     const outputBody = bodyText(response.body);
     if (pipeline !== null) {
       if (!pipeline) throw new Error('Pipeline command cannot be empty');
@@ -390,18 +407,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
     if (contextMatch) {
       const setting = contextMatch[1];
       const partial = contextMatch[2];
-      const lookup = CONTEXT_LOOKUPS[setting];
-      const cacheKey = `${lookup.path}|${settings.edgerc}|${settings.edgercSection}|${settings.accountSwitchKey}`;
-      try {
-        let body = cache.get(cacheKey);
-        if (!body) {
-          body = (await get(settings, lookup.path)).body;
-          cache.set(cacheKey, body);
-        }
-        return [contextCandidates(setting, body, partial), partial];
-      } catch {
-        return [[], partial];
-      }
+      return apiRegistry.completeSetting(setting, partial, settings, cache, requestGet || papiGet);
     }
     const setMatch = line.match(/^set\s+(\S*)$/);
     if (setMatch) {
@@ -416,27 +422,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
     const match = line.match(/^get\s+(\S*)$/);
     if (!match) return [[], line];
     const inputPath = match[1] || '/';
-    const staticMatches = pathCandidates(inputPath);
-    const dynamic = collectionFor(inputPath);
-    if (!dynamic || inputPath === dynamic.collection) {
-      return [staticMatches, inputPath];
-    }
-    const collectionPath = typeof dynamic.collection === 'function'
-      ? dynamic.collection(inputPath) : dynamic.collection;
-    const cacheKey = `${collectionPath}|${settings.edgerc}|${settings.edgercSection}|${settings.accountSwitchKey}`;
-    try {
-      let body = cache.get(cacheKey);
-      if (!body) {
-        body = (await requestGet(settings, collectionPath)).body;
-        cache.set(cacheKey, body);
-      }
-      const candidates = dynamicCandidates(inputPath, body);
-      const candidatePaths = candidates.map((candidate) =>
-      `${dynamic.pathPrefix(inputPath)}${candidate}`);
-      return [candidatePaths.length ? candidatePaths : staticMatches, inputPath];
-    } catch {
-      return [staticMatches, inputPath];
-    }
+    return apiRegistry.complete(inputPath, settings, cache, requestGet);
   }
 
   rl = readline.createInterface({
@@ -454,22 +440,84 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
     const ttyWrite = rl._ttyWrite.bind(rl);
     let searchTerm = null;
     let searchStart = 0;
-    rl._ttyWrite = (character, key) => {
-      if (key && key.ctrl && key.name === 'r') {
-        if (searchTerm === null) {
-          searchTerm = rl.line;
-          searchStart = 0;
-        }
-        const match = findHistoryMatch(rl.history, searchTerm, searchStart);
-        if (match) {
-          ttyWrite(null, { ctrl: true, name: 'u' });
-          ttyWrite(match.command, {});
-          searchStart = match.index + 1;
-        }
-        return;
+    let searchLine = '';
+    let searchCursor = 0;
+
+    function refreshSearch(match) {
+      const result = match ? match.command : '';
+      const suffix = match ? `': ${result}` : "': ";
+      rl.output.write(`\r\x1b[2K(reverse-i-search)\`${searchTerm}${suffix}`);
+    }
+
+    function updateSearch() {
+      const match = findHistoryMatch(rl.history, searchTerm, searchStart);
+      if (match) {
+        rl.line = match.command;
+        rl.cursor = rl.line.length;
+        searchStart = match.index;
+      } else {
+        rl.output.write('\x07');
+      }
+      refreshSearch(match);
+    }
+
+    function finishSearch(cancelled) {
+      if (cancelled) {
+        rl.line = searchLine;
+        rl.cursor = searchCursor;
       }
       searchTerm = null;
       searchStart = 0;
+      rl._refreshLine();
+    }
+
+    rl._ttyWrite = (character, key) => {
+      if (searchTerm !== null) {
+        if (key && key.ctrl && key.name === 'r') {
+          searchStart += 1;
+          updateSearch();
+          return;
+        }
+        if (key && (key.name === 'return' || key.name === 'enter')) {
+          finishSearch(false);
+          return;
+        }
+        if (key && key.name === 'escape') {
+          finishSearch(true);
+          return;
+        }
+        if (key && key.ctrl && key.name === 'g') {
+          finishSearch(true);
+          return;
+        }
+        if (key && key.name === 'backspace') {
+          if (searchTerm) {
+            searchTerm = searchTerm.slice(0, -1);
+            searchStart = 0;
+            updateSearch();
+          }
+          return;
+        }
+        if (character && !key?.ctrl && !key?.meta && character >= ' ') {
+          searchTerm += character;
+          searchStart = 0;
+          updateSearch();
+          return;
+        }
+        finishSearch(false);
+        if (character || key) {
+          ttyWrite(character, key);
+        }
+        return;
+      }
+      if (key && key.ctrl && key.name === 'r') {
+        searchLine = rl.line;
+        searchCursor = rl.cursor;
+        searchTerm = rl.line;
+        searchStart = 0;
+        updateSearch();
+        return;
+      }
       ttyWrite(character, key);
     };
   }
@@ -497,7 +545,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet =
     if (input.isTTY) output.write('\n');
   });
   rl.prompt();
-  return { rl, settings, execute, complete };
+  return { rl, settings, variables, execute, complete };
 }
 
 module.exports = {
@@ -516,5 +564,6 @@ module.exports = {
   saveParameterDefaults,
   SETTING_NAMES,
   settingCandidates,
-  contextCandidates
+  contextCandidates: apiRegistry.API_MODULES.find((apiModule) =>
+    apiModule.contextCandidates)?.contextCandidates
 };

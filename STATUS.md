@@ -4,10 +4,10 @@
 
 - Project: `config-read`, an interactive read-only Akamai Property Manager API
   (PAPI) shell.
-- Active branch: `feature/more-read-only-access`.
+- Active branch: `feature/api-resource-modules`.
 - Initial commit on `main`:
   `82742ac Initial working version of Akamai shell`.
-- The feature-branch changes after that commit are currently uncommitted.
+- The API-module refactor changes are currently uncommitted.
 - The supplied `ref/` directories remain untracked because each is an embedded
   Git repository.
 
@@ -122,8 +122,36 @@ quit
 - `save` and `load` support the default path or `-f <path>`.
 - Environment files are written atomically with restrictive permissions.
 - `set` updates the default parameter environment immediately.
-- Custom shell variables and credential settings are not persisted in the
-  parameter environment.
+- Custom shell variables are persisted separately from API parameters. The
+  EdgeGrid file path, selected credential section, account switch key,
+  contextual IDs, and query parameter defaults are also persisted and restored
+  with the parameter environment; credential secrets are never persisted.
+
+### API module structure
+
+- Added an API registry that routes slash-prefixed resource paths to a named
+  API module.
+- Added the `PropertyManager` module, which owns PAPI request delegation and
+  static/dynamic PAPI path completion.
+- Added a read-only `Cloudlets` module for Cloudlets v3 metadata, policies,
+  policy versions, activations, and policy-property associations.
+- Added a separately routed read-only Cloudlets v2 module under
+  `/cloudlets/api/v2`.
+- Added a read-only Edge Diagnostics v1 module under
+  `/edge-diagnostics/v1`, covering all documented GET endpoints.
+- Added a read-only Edge DNS (Config DNS v2) module under
+  `/config-dns/v2`, covering all documented GET endpoints.
+- Kept the existing `get` syntax unchanged while removing API-specific path
+  completion dispatch from the REPL.
+- The registry boundary is ready for additional API modules.
+- Shell completion and GET paths now include the owning API prefix:
+  `/papi/v1/...` for Property Manager and `/cloudlets/v3/...` for Cloudlets.
+- API modules are now discovered automatically from `src/apis/`; each module
+  supplies its own query-parameter metadata.
+- Shared EdgeGrid signing, request construction, and response parsing now live
+  in `src/edgegrid-transport.js`, independent of PAPI or Cloudlets.
+- The shared transport applies persisted parameter defaults and
+  `accountSwitchKey` consistently to all API modules.
 
 ## Tests and validation
 
@@ -154,6 +182,8 @@ npm start
 
 - The API catalog is still manually maintained in `src/catalog.js`; it does
   not yet load and resolve the PAPI OpenAPI definitions automatically.
+- Cloudlets v3 does not define a standalone `/properties` endpoint; associated
+  properties are available at `/policies/{policyId}/properties`.
 - Completion does not yet cover every dynamic identifier and every
   operation-specific parameter.
 - Query-parameter validation is based on a partial hand-maintained map rather
@@ -173,6 +203,9 @@ npm start
 - `src/main.js` - executable entry point.
 - `src/repl.js` - shell commands, completion, history, variables, pipelines,
   and persistence.
+- `src/api-registry.js` - API module selection and dispatch.
+- `src/apis/property-manager.js` - Property Manager request and completion
+  behavior.
 - `src/papi-client.js` - EdgeGrid-authenticated PAPI GET transport.
 - `src/catalog.js` - static and dynamic read-only path catalog.
 - `test/` - unit tests.

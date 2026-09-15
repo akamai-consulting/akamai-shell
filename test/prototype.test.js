@@ -136,6 +136,21 @@ test('splits a get command from a shell pipeline', () => {
   ]);
 });
 
+test('runs local shell commands with !', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-command-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  await repl.execute('! printf "hello\\n"');
+  assert.equal(output.read().toString(), 'prompt> hello\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('formats command history with oldest entries first', () => {
   assert.equal(formatHistory(['show', 'get /groups']), '1  get /groups\n2  show');
 });
@@ -223,16 +238,49 @@ test('saves and loads parameter defaults through commands', async () => {
   const envPath = path.join(directory, 'saved-env');
   const repl = createRepl(output, input, undefined, historyPath);
 
+  await repl.execute('set edgerc /tmp/custom-edgerc');
   await repl.execute('set contractId ctr_command');
+  await repl.execute('set foo saved-value');
+  await repl.execute('set edgerc-section papi');
   await repl.execute(`save -f ${envPath}`);
   await repl.execute('set contractId ctr_changed');
+  await repl.execute('set edgerc-section changed');
+  await repl.execute('unset foo');
   await repl.execute(`load -f ${envPath}`);
   assert.equal(repl.settings.contractId, 'ctr_command');
+  assert.equal(repl.settings.edgerc, '/tmp/custom-edgerc');
+  assert.equal(repl.settings.edgercSection, 'papi');
   assert.equal(repl.settings.parameterDefaults.contractId, 'ctr_command');
+  assert.equal(repl.settings.parameterDefaults.edgerc, '/tmp/custom-edgerc');
+  assert.equal(repl.settings.parameterDefaults.edgercSection, 'papi');
+  assert.equal(repl.variables.foo, 'saved-value');
 
   repl.rl.close();
   input.destroy();
   output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('loads the saved EdgeGrid section when starting a new shell', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-env-start-'));
+  const historyPath = path.join(directory, 'history');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const first = createRepl(output, input, undefined, historyPath);
+  await first.execute('set foo startup-value');
+  await first.execute('set edgerc-section papi');
+  first.rl.close();
+  input.destroy();
+  output.destroy();
+
+  const nextInput = new PassThrough();
+  const nextOutput = new PassThrough();
+  const second = createRepl(nextOutput, nextInput, undefined, historyPath);
+  assert.equal(second.settings.edgercSection, 'papi');
+  assert.equal(second.variables.foo, 'startup-value');
+  second.rl.close();
+  nextInput.destroy();
+  nextOutput.destroy();
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -281,12 +329,176 @@ test('completes edge hostname IDs from the edge hostname collection', async () =
     };
   }, historyPath);
 
-  const result = await repl.complete('get /edgehostnames/ehn_');
+  const result = await repl.complete('get /papi/v1/edgehostnames/ehn_');
   assert.deepEqual(result, [
-    ['/edgehostnames/ehn_123', '/edgehostnames/ehn_456'],
-    '/edgehostnames/ehn_'
+    ['/papi/v1/edgehostnames/ehn_123', '/papi/v1/edgehostnames/ehn_456'],
+    '/papi/v1/edgehostnames/ehn_'
   ]);
   assert.equal(requests[0].path, '/edgehostnames');
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('completes property IDs from the property collection without exposing templates', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const historyPath = path.join(historyDirectory, 'history');
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath) => {
+    requests.push(requestPath);
+    return {
+      body: {
+        properties: {
+          items: [
+            { propertyId: 'prp_123' },
+            { propertyId: 'prp_456' }
+          ]
+        }
+      }
+    };
+  }, historyPath);
+
+  const result = await repl.complete('get /papi/v1/properties/');
+  assert.deepEqual(result, [
+    ['/papi/v1/properties/prp_123', '/papi/v1/properties/prp_456'],
+    '/papi/v1/properties/'
+  ]);
+  assert.deepEqual(requests, ['/properties']);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('completes hostnames from the hostname collection', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const historyPath = path.join(historyDirectory, 'history');
+  const repl = createRepl(output, input, async () => ({
+    body: {
+      hostnames: {
+        items: [{ cnameFrom: 'www.example.com' }]
+      }
+    }
+  }), historyPath);
+
+  const result = await repl.complete('get /papi/v1/hostnames/');
+  assert.deepEqual(result, [['/papi/v1/hostnames/www.example.com'], '/papi/v1/hostnames/']);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('includes Cloudlets paths in root completion', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const repl = createRepl(output, input, undefined, path.join(historyDirectory, 'history'));
+
+  const [candidates, partial] = await repl.complete('get /');
+  assert.equal(partial, '/');
+  assert(candidates.includes('/papi/v1'));
+  assert(candidates.includes('/cloudlets/v3'));
+  assert(candidates.includes('/edge-diagnostics/v1'));
+  assert(candidates.includes('/config-dns/v2'));
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('completes Cloudlets v3 policy versions from the version collection', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const historyPath = path.join(historyDirectory, 'history');
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath) => {
+    requests.push(requestPath);
+    return {
+      body: {
+        content: [{ version: 1 }, { version: 3 }]
+      }
+    };
+  }, historyPath);
+
+  const result = await repl.complete('get /cloudlets/v3/policies/371861/versions/');
+  assert.deepEqual(result, [
+    [
+      '/cloudlets/v3/policies/371861/versions/1',
+      '/cloudlets/v3/policies/371861/versions/3'
+    ],
+    '/cloudlets/v3/policies/371861/versions/'
+  ]);
+  assert.deepEqual(requests, ['/policies/371861/versions']);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('shows Edge Diagnostics GET endpoint groups after its API prefix', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const repl = createRepl(output, input, undefined, path.join(historyDirectory, 'history'));
+
+  const [candidates, partial] = await repl.complete('get /edge-diagnostics/v1/');
+  assert.equal(partial, '/edge-diagnostics/v1/');
+  assert(candidates.includes('/edge-diagnostics/v1/edge-locations'));
+  assert(candidates.includes('/edge-diagnostics/v1/grep'));
+  assert(candidates.includes('/edge-diagnostics/v1/user-diagnostic-data'));
+  assert(candidates.includes('/edge-diagnostics/v1/connectivity-problems'));
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('completes Edge DNS zones from the zones collection', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const repl = createRepl(output, input, async (settings, requestPath) => {
+    assert.equal(requestPath, '/zones');
+    return { body: { zones: [{ zone: 'example.com' }, { zone: 'example.net' }] } };
+  }, path.join(historyDirectory, 'history'));
+
+  const result = await repl.complete('get /config-dns/v2/zones/');
+  assert.deepEqual(result, [
+    [
+      '/config-dns/v2/zones/convert-requests',
+      '/config-dns/v2/zones/create-requests',
+      '/config-dns/v2/zones/delete-requests',
+      '/config-dns/v2/zones/example.com',
+      '/config-dns/v2/zones/example.net'
+    ],
+    '/config-dns/v2/zones/'
+  ]);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('does not expose synthetic descendants while completing an Edge DNS zone', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const repl = createRepl(output, input, async () => ({
+    body: { zones: [{ zone: 'cdn.nicedemo.net' }] }
+  }), path.join(historyDirectory, 'history'));
+
+  const result = await repl.complete('get /config-dns/v2/zones/cdn.ni');
+  assert.deepEqual(result, [
+    ['/config-dns/v2/zones/cdn.nicedemo.net'],
+    '/config-dns/v2/zones/cdn.ni'
+  ]);
   repl.rl.close();
   input.destroy();
   output.destroy();

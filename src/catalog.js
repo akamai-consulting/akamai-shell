@@ -1,6 +1,11 @@
 'use strict';
 
 const path = require('path');
+const {
+  staticCandidates,
+  dynamicCollectionFor,
+  dynamicCandidates: completeDynamicCandidates
+} = require('./path-completion');
 
 const STATIC_PATHS = [
   '/build',
@@ -69,134 +74,100 @@ const STATIC_PATHS = [
 const DYNAMIC_COLLECTIONS = [
   {
     matches: (input) => /^\/edgehostnames\/[^/]*$/.test(input),
-    pathPrefix: () => '/edgehostnames/',
+    prefix: () => '/edgehostnames/',
     collection: '/edgehostnames',
-    responseKey: 'edgeHostnames',
+    response: (body) => body && body.edgeHostnames && body.edgeHostnames.items,
     key: 'edgeHostnameId'
   },
   {
     matches: (input) => /^\/cpcodes\/[^/]*$/.test(input),
-    pathPrefix: () => '/cpcodes/',
+    prefix: () => '/cpcodes/',
     collection: '/cpcodes',
-    responseKey: 'cpcodes',
+    response: (body) => body && body.cpcodes && body.cpcodes.items,
     key: 'cpcodeId'
   },
   {
     matches: (input) => /^\/properties\/[^/]+\/versions\/[^/]*$/.test(input),
-    pathPrefix: (input) => `${input.split('/').slice(0, 4).join('/')}/`,
+    prefix: (input) => `${input.split('/').slice(0, 4).join('/')}/`,
     collection: (input) => input.split('/').slice(0, 4).join('/'),
-    responseKey: 'versions',
+    response: (body) => body && body.versions && body.versions.items,
     key: 'propertyVersion'
   },
   {
     matches: (input) => /^\/properties\/[^/]+\/activations\/[^/]*$/.test(input),
-    pathPrefix: (input) => `${input.split('/').slice(0, 3).join('/')}/activations/`,
+    prefix: (input) => `${input.split('/').slice(0, 3).join('/')}/activations/`,
     collection: (input) => input.split('/').slice(0, 3).join('/') + '/activations',
-    responseKey: 'activations',
+    response: (body) => body && body.activations && body.activations.items,
     key: 'activationId'
   },
   {
     matches: (input) => /^\/properties\/[^/]+\/hostname-activations\/[^/]*$/.test(input),
-    pathPrefix: (input) => `${input.split('/').slice(0, 3).join('/')}/hostname-activations/`,
+    prefix: (input) => `${input.split('/').slice(0, 3).join('/')}/hostname-activations/`,
     collection: (input) => input.split('/').slice(0, 3).join('/') + '/hostname-activations',
-    responseKey: 'hostnameActivations',
+    response: (body) => body && body.hostnameActivations && body.hostnameActivations.items,
     key: 'hostnameActivationId'
   },
   {
     matches: (input) => /^\/includes\/[^/]+\/versions\/[^/]*$/.test(input),
-    pathPrefix: (input) => `${input.split('/').slice(0, 4).join('/')}/`,
+    prefix: (input) => `${input.split('/').slice(0, 4).join('/')}/`,
     collection: (input) => input.split('/').slice(0, 4).join('/'),
-    responseKey: 'versions',
+    response: (body) => body && body.versions && body.versions.items,
     key: 'includeVersion'
   },
   {
     matches: (input) => /^\/includes\/[^/]*$/.test(input),
-    pathPrefix: () => '/includes/',
+    prefix: () => '/includes/',
     collection: '/includes',
-    responseKey: 'includes',
+    response: (body) => body && body.includes && body.includes.items,
     key: 'includeId'
   },
   {
     matches: (input) => /^\/custom-behaviors\/[^/]*$/.test(input),
-    pathPrefix: () => '/custom-behaviors/',
+    prefix: () => '/custom-behaviors/',
     collection: '/custom-behaviors',
-    responseKey: 'customBehaviors',
+    response: (body) => body && body.customBehaviors && body.customBehaviors.items,
     key: 'behaviorId'
   },
   {
     matches: (input) => /^\/custom-overrides\/[^/]*$/.test(input),
-    pathPrefix: () => '/custom-overrides/',
+    prefix: () => '/custom-overrides/',
     collection: '/custom-overrides',
-    responseKey: 'customOverrides',
+    response: (body) => body && body.customOverrides && body.customOverrides.items,
     key: 'overrideId'
   },
   {
     matches: (input) => /^\/properties\/[^/]*$/.test(input),
-    pathPrefix: () => '/properties/',
+    prefix: () => '/properties/',
     collection: '/properties',
-    responseKey: 'properties',
+    response: (body) => body && body.properties && body.properties.items,
     key: 'propertyId'
   },
   {
+    matches: (input) => /^\/hostnames\/[^/]*$/.test(input),
+    prefix: () => '/hostnames/',
+    collection: '/hostnames',
+    response: (body) => body && body.hostnames && body.hostnames.items,
+    key: 'cnameFrom'
+  },
+  {
     matches: (input) => /^\/products\/[^/]*$/.test(input),
-    pathPrefix: () => '/products/',
+    prefix: () => '/products/',
     collection: '/products',
-    responseKey: 'products',
+    response: (body) => body && body.products && body.products.items,
     key: 'productId'
   }
 ];
 
 function pathCandidates(input) {
-  const prefix = input || '/';
-  const candidates = new Set();
-  const inputParts = prefix.split('/').filter(Boolean);
-  const completingNextSegment = prefix.endsWith('/');
-  for (const template of STATIC_PATHS) {
-    const templateParts = template.split('/').filter(Boolean);
-    if (inputParts.length > templateParts.length) continue;
-    if (completingNextSegment && templateParts.length !== inputParts.length + 1) continue;
-    let matches = true;
-    const resolvedParts = templateParts.map((part, index) => {
-      if (part.startsWith('{') && part.endsWith('}')) {
-        if (inputParts[index] === undefined) return part;
-        return inputParts[index];
-      }
-      if (inputParts[index] !== undefined) {
-        const isPartialFinalSegment = !completingNextSegment &&
-          index === inputParts.length - 1 &&
-          inputParts.length === templateParts.length;
-        if (isPartialFinalSegment ? !part.startsWith(inputParts[index]) : inputParts[index] !== part) {
-          matches = false;
-        }
-      }
-      return part;
-    });
-    const candidate = `/${resolvedParts.join('/')}`;
-    if (matches && candidate.startsWith(prefix)) {
-      candidates.add(candidate);
-    }
-  }
-  return [...candidates];
+  return staticCandidates(input, STATIC_PATHS);
 }
 
 function collectionFor(input) {
-  return DYNAMIC_COLLECTIONS.find(({ matches }) => matches(input));
-}
-
-function extractItems(body, collection) {
-  const container = body && body[collection.responseKey];
-  return Array.isArray(container && container.items) ? container.items : [];
+  return dynamicCollectionFor(input, DYNAMIC_COLLECTIONS);
 }
 
 function dynamicCandidates(input, body) {
-  const collection = collectionFor(input);
-  if (!collection) {
-    return [];
-  }
-  const partial = input.slice(collection.pathPrefix(input).length).toLowerCase();
-  return extractItems(body, collection)
-    .map((item) => item[collection.key] === undefined ? '' : String(item[collection.key]))
-    .filter((value) => value && value.toLowerCase().startsWith(partial));
+  return completeDynamicCandidates(input, body, collectionFor(input));
 }
 
 function referenceRoot() {
@@ -207,5 +178,7 @@ module.exports = {
   pathCandidates,
   collectionFor,
   dynamicCandidates,
-  referenceRoot
+  referenceRoot,
+  staticPaths: STATIC_PATHS,
+  dynamicCollections: DYNAMIC_COLLECTIONS
 };
