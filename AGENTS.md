@@ -8,7 +8,9 @@ demonstrate direct HTTP API access rather than access through a
 Property Manager wrapper or domain-specific client library.
 
 The project is currently a Node.js CommonJS application. Keep the executable
-entry point consistent with `package.json` (`src/main.js`).
+entry point consistent with `package.json` (`src/main.js`). API-specific
+behavior must live in modules registered through `src/api-registry.js`; the
+REPL should not contain endpoint-specific request or completion logic.
 
 ## API access
 
@@ -37,13 +39,15 @@ form:
 ```text
 prompt> set edgerc ~/.edgerc
 prompt> set edgerc-section papi
-prompt> get /properties
-prompt> get /edgehostnames/<TAB>
+prompt> get /papi/v1/properties
+prompt> get /papi/v1/edgehostnames/<TAB>
 ```
 
 The initial command grammar should include:
 
 - `get <api-path> [query parameters]` for read-only HTTP GET requests.
+  API paths include their service prefix, such as `/papi/v1/...` or
+  `/cloudlets/v3/...`.
 - `set <name> <value>` for global settings.
 - `show` or an equivalent command for displaying non-sensitive settings.
 - `help` and `exit`/`quit`.
@@ -158,14 +162,22 @@ Use small modules with explicit boundaries:
 - **Session configuration:** Stores the EdgeGrid resource-file path, credential
   section, and any completion settings. Sensitive credential values remain in
   the EdgeGrid library and are never copied into shell state for display.
-- **HTTP transport layer:** Accepts a method, API path, query parameters, and
+- **HTTP transport layer (`src/edgegrid-transport.js`):** Accepts a method, API path, query parameters, and
   headers; resolves the configured EdgeGrid credentials; signs the request;
   sends it through a generic HTTP client; and returns status, headers, and body.
   This layer must not contain Property Manager-specific business logic.
-- **PAPI API/catalog layer:** Loads the checked-in PAPI OpenAPI description and
-  normalizes endpoint templates, allowed methods, path parameters, query
-  parameters, and response metadata. It is responsible for API-specific
-  discovery, not for sending requests.
+- **API modules and registry:** Each API module owns its endpoint catalog,
+  path matching, request validation, response metadata, and dynamic completion.
+  The registry automatically loads modules from `src/apis/` and selects them
+  from the requested path. New modules must be addable without changing REPL
+  command parsing or query-parameter lists.
+- The current registered modules are `PropertyManager` and read-only
+  `Cloudlets`. Keep method support restricted to GET until write operations
+  are explicitly requested.
+- **PAPI transport/catalog layer:** The Property Manager module uses the
+  generic transport and its PAPI endpoint metadata. It is responsible for
+  API-specific discovery, not for hiding request construction or response
+  parsing.
 - **Completion layer:** Uses the catalog for static path completion and the
   transport layer for dynamic collection lookups. It should return completion
   candidates separately from normal command output and handle asynchronous

@@ -1,6 +1,6 @@
 'use strict';
 
-const EdgeGrid = require('akamai-edgegrid');
+const transport = require('./edgegrid-transport');
 
 const PAPI_PREFIX = '/papi/v1';
 const CONTEXT_QUERY_PATHS = ['/cpcodes', '/edgehostnames', '/products', '/properties'];
@@ -10,61 +10,6 @@ const REQUIRED_QUERY_PARAMETERS = [
   { path: '/products', parameters: ['contractId'] },
   { path: '/properties', parameters: ['contractId', 'groupId'] }
 ];
-
-function parseBody(body) {
-  if (Buffer.isBuffer(body)) {
-    return body;
-  }
-  if (!body) {
-    return null;
-  }
-  try {
-    return JSON.parse(body);
-  } catch {
-    return body;
-  }
-}
-
-function normalizePath(apiPath) {
-  if (!apiPath || !apiPath.startsWith('/')) {
-    throw new Error('API path must start with "/"');
-  }
-  if (apiPath.includes('://') || apiPath.includes('..')) {
-    throw new Error('Invalid API path');
-  }
-  return apiPath;
-}
-
-function createClient(settings) {
-  if (!settings.edgerc || !settings.edgercSection) {
-    throw new Error('Set edgerc and edgerc-section before making a request');
-  }
-  return new EdgeGrid({
-    path: settings.edgerc,
-    section: settings.edgercSection
-  });
-}
-
-function send(client, request) {
-  return new Promise((resolve, reject) => {
-    client.auth(request).send((error, response, body) => {
-      if (error) {
-        if (error.response) {
-          error.statusCode = error.response.status;
-          error.headers = error.response.headers;
-          error.body = error.response.data;
-        }
-        reject(error);
-        return;
-      }
-      resolve({
-        statusCode: response.status,
-        headers: response.headers,
-        body
-      });
-    });
-  });
-}
 
 function requiredParametersFor(apiPath) {
   return REQUIRED_QUERY_PARAMETERS.find(({ path }) =>
@@ -81,8 +26,8 @@ function validateRequiredParameters(apiPath, query) {
   }
 }
 
-async function get(settings, apiPath, query = {}, clientFactory = createClient) {
-  const normalizedPath = normalizePath(apiPath);
+async function get(settings, apiPath, query = {}, clientFactory = transport.createClient) {
+  const normalizedPath = transport.normalizePath(apiPath);
   const qs = { ...(settings.parameterDefaults || {}), ...query };
   const supportsContext = CONTEXT_QUERY_PATHS.some((path) =>
     normalizedPath === path || normalizedPath.startsWith(`${path}/`));
@@ -95,29 +40,18 @@ async function get(settings, apiPath, query = {}, clientFactory = createClient) 
   }
   validateRequiredParameters(normalizedPath, qs);
 
-  const client = clientFactory(settings);
-  const response = await send(client, {
-    path: `${PAPI_PREFIX}${normalizedPath}`,
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'PAPI-Use-Prefixes': 'true'
-    },
-    qs
+  return transport.request(settings, normalizedPath, qs, clientFactory, PAPI_PREFIX, {
+    Accept: 'application/json',
+    'PAPI-Use-Prefixes': 'true'
   });
-
-  return {
-    statusCode: response.statusCode,
-    headers: response.headers,
-    body: parseBody(response.body)
-  };
 }
 
 module.exports = {
   get,
-  normalizePath,
+  normalizePath: transport.normalizePath,
   PAPI_PREFIX,
-  send,
+  send: transport.send,
+  request: transport.request,
   requiredParametersFor,
   validateRequiredParameters
 };
