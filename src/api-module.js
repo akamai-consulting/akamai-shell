@@ -21,7 +21,8 @@ function createApiModule({
   request,
   methodPaths = {},
   methodStaticPaths = {},
-  combineStaticCandidates = false
+  combineStaticCandidates = false,
+  requestHeaders
 }) {
   const normalizedMethodPaths = Object.fromEntries(
     Object.entries(methodPaths).map(([method, paths]) => [
@@ -61,7 +62,12 @@ function createApiModule({
       return requestHandler(settings, apiPath, query, body, method);
     }
     if (method === 'GET' && request) return request(settings, apiPath, query);
-    return transport.requestMethod(settings, apiPath, method, query, body, undefined, prefix);
+    const headers = typeof requestHeaders === 'function'
+      ? requestHeaders(settings, method, apiPath)
+      : undefined;
+    return transport.requestMethod(
+      settings, apiPath, method, query, body, undefined, prefix, headers
+    );
   }
 
   function supportsMethod(method, apiPath) {
