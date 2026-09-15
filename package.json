@@ -1,0 +1,19 @@
+{
+  "name": "config-read",
+  "version": "1.0.0",
+  "description": "Access Akamai Property Manager API from CLI",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "src/main.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "akamai-edgegrid": "^4.0.4"
+  }
+}
