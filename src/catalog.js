@@ -7,10 +7,45 @@ const STATIC_PATHS = [
   '/groups',
   '/contracts',
   '/products',
+  '/products/{productId}/mapping-use-cases',
   '/cpcodes',
+  '/cpcodes/',
+  '/cpcodes/{cpcodeId}',
   '/edgehostnames',
   '/edgehostnames/',
+  '/edgehostnames/{edgeHostnameId}',
   '/hostnames',
+  '/hostnames/{hostname}/audit-history',
+  '/includes',
+  '/includes/{includeId}',
+  '/includes/{includeId}/activations',
+  '/includes/{includeId}/activations/{activationId}',
+  '/includes/{includeId}/parents',
+  '/includes/{includeId}/versions',
+  '/includes/{includeId}/versions/latest',
+  '/includes/{includeId}/versions/{includeVersion}',
+  '/includes/{includeId}/versions/{includeVersion}/available-behaviors',
+  '/includes/{includeId}/versions/{includeVersion}/available-criteria',
+  '/includes/{includeId}/versions/{includeVersion}/rules',
+  '/includes/validation-results/{activationId}/properties/{propertyId}/versions/{propertyVersion}',
+  '/custom-behaviors',
+  '/custom-behaviors/{behaviorId}',
+  '/custom-overrides',
+  '/custom-overrides/{overrideId}',
+  '/client-settings',
+  '/rule-formats',
+  '/schemas/products/{productId}/{ruleFormat}',
+  '/schemas/request/{filename}',
+  '/bulk/activations',
+  '/bulk/activations/{bulkActivationId}',
+  '/bulk/property-version-creations',
+  '/bulk/property-version-creations/{bulkCreateId}',
+  '/bulk/rules-patch-requests',
+  '/bulk/rules-patch-requests/{bulkPatchId}',
+  '/bulk/rules-search-requests',
+  '/bulk/rules-search-requests-synch',
+  '/bulk/rules-search-requests/{bulkSearchId}',
+  '/search/find-by-value',
   '/properties',
   '/properties/',
   '/properties/{propertyId}',
@@ -18,6 +53,12 @@ const STATIC_PATHS = [
   '/properties/{propertyId}/versions/',
   '/properties/{propertyId}/versions/latest',
   '/properties/{propertyId}/versions/{propertyVersion}',
+  '/properties/{propertyId}/activations',
+  '/properties/{propertyId}/activations/{activationId}',
+  '/properties/{propertyId}/hostname-activations',
+  '/properties/{propertyId}/hostname-activations/{hostnameActivationId}',
+  '/properties/{propertyId}/hostnames',
+  '/properties/{propertyId}/hostnames/diff',
   '/properties/{propertyId}/versions/{propertyVersion}/available-behaviors',
   '/properties/{propertyId}/versions/{propertyVersion}/available-criteria',
   '/properties/{propertyId}/versions/{propertyVersion}/hostnames',
@@ -26,8 +67,83 @@ const STATIC_PATHS = [
 ];
 
 const DYNAMIC_COLLECTIONS = [
-  { template: '/edgehostnames/', collection: '/edgehostnames', responseKey: 'edgeHostnames', key: 'edgeHostnameId' },
-  { template: '/properties/', collection: '/properties', responseKey: 'properties', key: 'propertyId' }
+  {
+    matches: (input) => /^\/edgehostnames\/[^/]*$/.test(input),
+    pathPrefix: () => '/edgehostnames/',
+    collection: '/edgehostnames',
+    responseKey: 'edgeHostnames',
+    key: 'edgeHostnameId'
+  },
+  {
+    matches: (input) => /^\/cpcodes\/[^/]*$/.test(input),
+    pathPrefix: () => '/cpcodes/',
+    collection: '/cpcodes',
+    responseKey: 'cpcodes',
+    key: 'cpcodeId'
+  },
+  {
+    matches: (input) => /^\/properties\/[^/]+\/versions\/[^/]*$/.test(input),
+    pathPrefix: (input) => `${input.split('/').slice(0, 4).join('/')}/`,
+    collection: (input) => input.split('/').slice(0, 4).join('/'),
+    responseKey: 'versions',
+    key: 'propertyVersion'
+  },
+  {
+    matches: (input) => /^\/properties\/[^/]+\/activations\/[^/]*$/.test(input),
+    pathPrefix: (input) => `${input.split('/').slice(0, 3).join('/')}/activations/`,
+    collection: (input) => input.split('/').slice(0, 3).join('/') + '/activations',
+    responseKey: 'activations',
+    key: 'activationId'
+  },
+  {
+    matches: (input) => /^\/properties\/[^/]+\/hostname-activations\/[^/]*$/.test(input),
+    pathPrefix: (input) => `${input.split('/').slice(0, 3).join('/')}/hostname-activations/`,
+    collection: (input) => input.split('/').slice(0, 3).join('/') + '/hostname-activations',
+    responseKey: 'hostnameActivations',
+    key: 'hostnameActivationId'
+  },
+  {
+    matches: (input) => /^\/includes\/[^/]+\/versions\/[^/]*$/.test(input),
+    pathPrefix: (input) => `${input.split('/').slice(0, 4).join('/')}/`,
+    collection: (input) => input.split('/').slice(0, 4).join('/'),
+    responseKey: 'versions',
+    key: 'includeVersion'
+  },
+  {
+    matches: (input) => /^\/includes\/[^/]*$/.test(input),
+    pathPrefix: () => '/includes/',
+    collection: '/includes',
+    responseKey: 'includes',
+    key: 'includeId'
+  },
+  {
+    matches: (input) => /^\/custom-behaviors\/[^/]*$/.test(input),
+    pathPrefix: () => '/custom-behaviors/',
+    collection: '/custom-behaviors',
+    responseKey: 'customBehaviors',
+    key: 'behaviorId'
+  },
+  {
+    matches: (input) => /^\/custom-overrides\/[^/]*$/.test(input),
+    pathPrefix: () => '/custom-overrides/',
+    collection: '/custom-overrides',
+    responseKey: 'customOverrides',
+    key: 'overrideId'
+  },
+  {
+    matches: (input) => /^\/properties\/[^/]*$/.test(input),
+    pathPrefix: () => '/properties/',
+    collection: '/properties',
+    responseKey: 'properties',
+    key: 'propertyId'
+  },
+  {
+    matches: (input) => /^\/products\/[^/]*$/.test(input),
+    pathPrefix: () => '/products/',
+    collection: '/products',
+    responseKey: 'products',
+    key: 'productId'
+  }
 ];
 
 function pathCandidates(input) {
@@ -64,10 +180,7 @@ function pathCandidates(input) {
 }
 
 function collectionFor(input) {
-  return DYNAMIC_COLLECTIONS.find(({ template }) => {
-    if (!input.startsWith(template)) return false;
-    return !input.slice(template.length).includes('/');
-  });
+  return DYNAMIC_COLLECTIONS.find(({ matches }) => matches(input));
 }
 
 function extractItems(body, collection) {
@@ -80,9 +193,9 @@ function dynamicCandidates(input, body) {
   if (!collection) {
     return [];
   }
-  const partial = input.slice(collection.template.length).toLowerCase();
+  const partial = input.slice(collection.pathPrefix(input).length).toLowerCase();
   return extractItems(body, collection)
-    .map((item) => item[collection.key])
+    .map((item) => item[collection.key] === undefined ? '' : String(item[collection.key]))
     .filter((value) => value && value.toLowerCase().startsWith(partial));
 }
 

@@ -69,6 +69,22 @@ test('adds the global contract ID to products', async () => {
   assert.deepEqual(requests[0].qs, { contractId: 'ctr_global' });
 });
 
+test('uses configured parameter defaults unless overridden', async () => {
+  const requests = [];
+  await get(
+    {
+      edgerc: '/tmp/test-edgerc',
+      edgercSection: 'papi',
+      parameterDefaults: { limit: '10', contractId: 'ctr_default' }
+    },
+    '/products',
+    { limit: '2' },
+    fakeClientFactory(requests, { products: { items: [] } })
+  );
+
+  assert.deepEqual(requests[0].qs, { limit: '2', contractId: 'ctr_default' });
+});
+
 test('reports missing required query parameters before sending', () => {
   assert.throws(
     () => validateRequiredParameters('/cpcodes', { contractId: 'ctr_123' }),
