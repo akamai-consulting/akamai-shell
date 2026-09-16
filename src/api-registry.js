@@ -190,5 +190,6 @@ module.exports = {
   completeSetting,
   queryParameters,
   parameterHelp,
-  hasCompletionDescendants
+  hasCompletionDescendants,
+  catalogForPrefix
 };

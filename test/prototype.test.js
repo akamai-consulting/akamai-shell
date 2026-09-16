@@ -143,11 +143,70 @@ test('calls Akamai get commands through the JavaScript $ function', async () => 
     version: 1,
     description: 'test'
   });
+
   assert.deepEqual(requests, [{
     requestPath: '/policies/371982/versions/1',
     query: {}
   }]);
   assert.equal(output.read(), null);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('captures JavaScript $ helper pipeline output', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-pipeline-'));
+  const repl = createRepl(output, input, async () => ({
+    body: { version: 1, description: 'test' }
+  }), path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('count = $("get /papi/v1/properties | wc -l")');
+  assert.equal(repl.variables.count, 4);
+
+  await repl.execute('group = $("get /papi/v1/properties | cat")');
+  assert.deepEqual(repl.variables.group, { version: 1, description: 'test' });
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('prints JSON results from pipelines containing quoted semicolons', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-filter-'));
+  const repl = createRepl(output, input, async () => ({
+    body: { value: 1 }
+  }), path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('baz = $(`get /papi/v1/properties | sed \'s/;/ /\'`)');
+  assert.deepEqual(repl.variables.baz, { value: 1 });
+  assert.equal(output.read().toString(), '{"value":1}\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('deserializes multiple JSON values from a JavaScript pipeline', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-json-stream-'));
+  const repl = createRepl(output, input, async () => ({
+    body: { items: [{ id: 1 }, { id: 2 }] }
+  }), path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('items = $(`get /papi/v1/properties | jq \'.items[]\'`)');
+  assert.deepEqual(repl.variables.items, [{ id: 1 }, { id: 2 }]);
 
   repl.rl.close();
   input.destroy();
@@ -275,6 +334,24 @@ test('completes JavaScript object keys and array indices', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('completes indices for promise-backed arrays', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-promise-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  await repl.execute('baz = Promise.resolve([{id:1},{id:2}])');
+  assert.deepEqual(await repl.complete('baz['), [['baz[0]', 'baz[1]'], 'baz[']);
+  output.read();
+  await repl.execute('show baz[0]');
+  assert.deepEqual(JSON.parse(output.read().toString()), { id: 1 });
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('completes variable references throughout command lines', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
@@ -344,6 +421,42 @@ test('executes multiple JavaScript statements on one line', async () => {
   output.read();
   await repl.execute('console.log(1); console.log(2);');
   assert.equal(output.read().toString(), '1\n2\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('retains functions as session-only JavaScript values', async () => {
+  const output = new PassThrough();
+  const input = new PassThrough();
+  const historyPath = path.join(os.tmpdir(), `history-function-${Date.now()}`);
+  const repl = createRepl(output, input, undefined, historyPath);
+  output.read();
+
+  await repl.execute('hi = () => console.log(123)');
+  assert.equal(typeof repl.variables.hi, 'function');
+  assert.equal(output.read()?.toString() || '', '');
+
+  await repl.execute('hi()');
+  assert.equal(output.read().toString(), '123\n');
+
+  const saved = JSON.parse(fs.readFileSync(path.join(path.dirname(historyPath), 'env'), 'utf8'));
+  assert.equal(Object.prototype.hasOwnProperty.call(saved.variables, 'hi'), false);
+  repl.rl.close();
+});
+
+test('show awaits promise-backed session values', async () => {
+  const output = new PassThrough();
+  const input = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-show-promise-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  output.read();
+  repl.variables.baz = Promise.resolve([{ id: 1 }]);
+  await repl.execute('show baz');
+  assert.deepEqual(JSON.parse(output.read().toString()), [{ id: 1 }]);
 
   repl.rl.close();
   input.destroy();
@@ -659,7 +772,7 @@ test('runs local shell commands with !', async () => {
   const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
 
   await repl.execute('! printf "hello\\n"');
-  assert.equal(output.read().toString(), 'prompt> hello\n');
+  assert.equal(output.read().toString(), 'akamai> hello\n');
 
   repl.rl.close();
   input.destroy();

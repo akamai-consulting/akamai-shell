@@ -46,7 +46,7 @@ and mutation confirmation flows remain unsupported.
 
 ### Interactive shell
 
-Supported commands include `get`, `post`, `put`, `save`, `load`,
+Supported commands include `get`, `post`, `put`, `find`, `save`, `load`,
 `show`, `history`, `echo`, `help`, `exit`, and `quit`.
 
 - Shell variables support `$name`, property, and index expansion (for example
@@ -73,6 +73,9 @@ Supported commands include `get`, `post`, `put`, `save`, `load`,
   string and `name:=value` parses JSON. Query parameters remain available in
   the path or as `name==value` arguments. Writes require a body and do not
   support GET pipelines.
+- `find <api-path> -q <rule>` fetches one GET response and returns matching
+  dictionaries and resource paths. Rules support exact or substring matching
+  for field names and values; it does not recursively fetch child resources.
 - `get`, `post`, and `put` accept `-f <path>` before or after the API path.
   GET writes formatted response JSON to the file; POST and PUT read a JSON
   request body from the file.
