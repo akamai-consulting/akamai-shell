@@ -607,6 +607,28 @@ test('defines, expands, lists, and unsets custom variables', async () => {
   fs.rmSync(historyDirectory, { recursive: true, force: true });
 });
 
+test('expands indexed JavaScript variable values in command lines', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const historyPath = path.join(historyDirectory, 'history');
+  let printed = '';
+  output.on('data', (chunk) => {
+    printed += chunk.toString();
+  });
+  const repl = createRepl(output, input, undefined, historyPath);
+  printed = '';
+
+  await repl.execute('foo = {"aaa":[1,2,3],"bbb":"hoge"}');
+  await repl.execute('echo $foo["aaa"]');
+  assert.equal(printed, '[1,2,3]\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
 test('loads an empty history when the history file does not exist', () => {
   const filePath = path.join(os.tmpdir(), `akamai-shell-history-${process.pid}-missing`);
   assert.deepEqual(loadHistory(filePath), []);

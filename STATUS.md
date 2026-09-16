@@ -49,8 +49,9 @@ and mutation confirmation flows remain unsupported.
 Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
 `show`, `history`, `echo`, `help`, `exit`, and `quit`.
 
-- Shell variables support `$name` expansion; command-line expansion uses the
-  variable's JSON serialization (so a string includes its JSON quotes).
+- Shell variables support `$name`, property, and index expansion (for example
+  `$foo["items"][0]`); command-line expansion uses the variable's JSON
+  serialization (so a string includes its JSON quotes).
 - The experimental JavaScript session scope accepts trusted statements such as
   `foo = {"items":[]}`, `foo["name"] = "value"`, and `delete foo["items"]`.
   POST and PUT also accept `-v <expression>` to use a JSON-serializable session
