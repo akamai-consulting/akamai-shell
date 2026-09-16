@@ -43,6 +43,25 @@ npm install
 npm start
 ```
 
+To install the shell as a global CLI from a local checkout:
+
+```bash
+npm install -g .
+```
+
+For a development checkout, use a link instead:
+
+```bash
+npm link
+```
+
+Both commands install the `akamai-shell` executable, which can then be run
+from any directory:
+
+```bash
+akamai-shell
+```
+
 Configure the credential file and section from inside the shell:
 
 ```text

@@ -6,6 +6,9 @@
   "author": "",
   "type": "commonjs",
   "main": "src/main.js",
+  "bin": {
+    "akamai-shell": "src/main.js"
+  },
   "directories": {
     "doc": "doc"
   },
