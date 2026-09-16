@@ -283,6 +283,15 @@ test('completes variable references throughout command lines', async () => {
 
   await repl.execute('foo = {"activations":[{"id":1}],"status":"active"}');
   assert.deepEqual(await repl.complete('fo'), [['foo'], 'fo']);
+  assert.deepEqual(await repl.complete('show fo'), [['foo'], 'fo']);
+  assert.deepEqual(await repl.complete('show foo["act'), [
+    ['foo["activations"]'],
+    'foo["act'
+  ]);
+  assert.deepEqual(await repl.complete('show foo["activations"]['), [
+    ['foo["activations"][0]'],
+    'foo["activations"]['
+  ]);
   assert.deepEqual(await repl.complete('echo $fo'), [['$foo'], '$fo']);
   assert.deepEqual(await repl.complete('get /path/$fo'), [['$foo'], '$fo']);
   assert.deepEqual(await repl.complete('echo $foo["act'), [

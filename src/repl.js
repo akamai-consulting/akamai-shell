@@ -363,6 +363,11 @@ function completeVariableReference(line, variables) {
   return [sortCandidates(keys), partial];
 }
 
+function completeVariableName(line, variables) {
+  if (!/^[A-Za-z_$][\w$]*$/.test(line)) return null;
+  return [sortCandidates(Object.keys(variables).filter((name) => name.startsWith(line))), line];
+}
+
 function splitPipeline(line) {
   let quote = '';
   for (let index = 0; index < line.length; index += 1) {
@@ -779,6 +784,16 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   async function complete(line) {
+    const showMatch = line.match(/^show\s+(\S*)$/);
+    if (showMatch) {
+      const expression = showMatch[1];
+      if (!expression) {
+        return [sortCandidates(Object.keys(variables)), expression];
+      }
+      return completeVariableReference(expression, variables) ||
+        completeVariableProperties(expression, variables) ||
+        completeVariableName(expression, variables) || [[], expression];
+    }
     if (/^[A-Za-z_$][\w$]*$/.test(line)) {
       const candidates = [
         ...COMMANDS.filter((command) => command.startsWith(line)),
