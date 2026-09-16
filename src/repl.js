@@ -254,9 +254,10 @@ function parseWriteArguments(tokens, method = 'POST') {
 }
 
 async function evaluateJavaScript(expression, variables, requireValue = true, expressionMode = false) {
+  const sourceExpression = expression.replace(/\$\s*\(/g, 'await $(');
   const source = expressionMode
-    ? `(async () => (${expression}))()`
-    : `(async () => { ${expression}\n})()`;
+    ? `(async () => (${sourceExpression}))()`
+    : `(async () => { ${sourceExpression}\n})()`;
   const value = await vm.runInNewContext(source, variables);
   if (value === undefined && !requireValue) return value;
   if (value === undefined) throw new Error('JavaScript expression must produce a JSON value');
@@ -484,7 +485,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   });
   Object.defineProperty(variables, '$', {
     value: async (command) => {
-      const tokens = tokenize(command);
+      const tokens = tokenize(expandVariables(command, variables));
       const method = tokens.shift()?.toLowerCase();
       if (method !== 'get') {
         throw new Error('JavaScript $() currently supports only the get command');

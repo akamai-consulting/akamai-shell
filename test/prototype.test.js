@@ -137,7 +137,8 @@ test('calls Akamai get commands through the JavaScript $ function', async () => 
   }, path.join(directory, 'history'));
 
   output.read();
-  await repl.execute('foo = await $("get /cloudlets/api/v2/policies/371982/versions/1")');
+  await repl.execute('pid = 371982');
+  await repl.execute('foo = $("get /cloudlets/api/v2/policies/$pid/versions/1")');
   assert.deepEqual(JSON.parse(JSON.stringify(repl.variables.foo)), {
     version: 1,
     description: 'test'
