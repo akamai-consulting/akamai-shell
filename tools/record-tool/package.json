@@ -1,0 +1,12 @@
+{
+  "name": "akamai-record-tool",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Generate Node.js scripts from akamai-shell HTTP trace JSONL",
+  "bin": {
+    "record-tool": "bin/record-tool.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

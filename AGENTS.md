@@ -38,10 +38,10 @@ The application should run as a REPL and support commands in this general
 form:
 
 ```text
-prompt> set edgerc ~/.edgerc
-prompt> set edgerc-section papi
-prompt> get /papi/v1/properties
-prompt> get /papi/v1/edgehostnames/<TAB>
+akamai> set edgerc ~/.edgerc
+akamai> set edgerc-section papi
+akamai> get /papi/v1/properties
+akamai> get /papi/v1/edgehostnames/<TAB>
 ```
 
 The initial command grammar should include:

@@ -10,6 +10,7 @@ const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
 const { createLogger, LEVELS } = require('./logger');
 const { createRecorder } = require('./recorder');
+const { findResources } = require('./find');
 
 const HISTORY_SIZE = 1000;
 const HISTORY_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'history');
@@ -22,7 +23,7 @@ const CONFIG_NAMES = [
   ...QUERY_PARAMETER_NAMES
 ];
 const COMMANDS = [
-  'get', 'post', 'put', 'show', 'history',
+  'get', 'post', 'put', 'find', 'show', 'history',
   'echo', 'record', 'help', '?', 'exit', 'quit'
 ];
 
@@ -117,6 +118,7 @@ const HELP = `Commands:
   ?                              Alias for help
   record auto|on|off             Capture HTTP requests as JSONL
   record show [--http]           Display captured request records
+  find <api-path> -q <query>    Find dictionaries in one API response
   exit                           Exit the shell`;
 
 function expandHome(value) {
@@ -170,7 +172,26 @@ function parseGetArguments(tokens) {
     const value = argument.slice(separator + 2);
     request.query[name] = value;
   }
+
   return request;
+}
+
+function parseFindArguments(tokens) {
+  if (!tokens.length) throw new Error('Usage: find <api-path> [-q <query>]');
+  const pathToken = tokens.shift();
+  let query;
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] === '-q') {
+      if (query !== undefined || tokens[index + 1] === undefined) {
+        throw new Error('Usage: find <api-path> [-q <query>]');
+      }
+      query = tokens[++index];
+      continue;
+    }
+    throw new Error('Usage: find <api-path> -q <query>');
+  }
+  if (query === undefined) throw new Error('Usage: find <api-path> -q <query>');
+  return { path: parseQuery(pathToken).path, query };
 }
 
 function extractFileOption(tokens, method) {
@@ -236,7 +257,14 @@ function parseWriteArguments(tokens, method = 'POST') {
   return { ...request, body };
 }
 
-async function evaluateJavaScript(expression, variables, requireValue = true, expressionMode = false) {
+async function evaluateJavaScript(expression, variables, requireValue = true, expressionMode = false,
+  serialize = true) {
+  for (const name of Object.keys(variables)) {
+    const value = variables[name];
+    if (value && typeof value.then === 'function') {
+      variables[name] = await value;
+    }
+  }
   const sourceExpression = expression.replace(/\$\s*\(/g, 'await $(');
   const source = expressionMode
     ? `(async () => (${sourceExpression}))()`
@@ -244,6 +272,7 @@ async function evaluateJavaScript(expression, variables, requireValue = true, ex
   const value = await vm.runInNewContext(source, variables);
   if (value === undefined && !requireValue) return value;
   if (value === undefined) throw new Error('JavaScript expression must produce a JSON value');
+  if (!serialize) return value;
   try {
     const serialized = JSON.stringify(value);
     if (serialized === undefined) throw new Error('value is undefined');
@@ -256,6 +285,31 @@ async function evaluateJavaScript(expression, variables, requireValue = true, ex
 function serializeVariable(value) {
   const serialized = JSON.stringify(value);
   return serialized === undefined ? '' : serialized;
+}
+
+function hasUnquotedCharacter(value, target) {
+  let quote = '';
+  let escaped = false;
+  for (const character of value) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\' && quote) {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+    } else if (character === target) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function expandVariables(value, variables) {
@@ -278,7 +332,7 @@ function isJavaScriptStatement(line) {
 }
 
 function isJavaScriptExpression(line) {
-  return !line.includes(';') &&
+  return !hasUnquotedCharacter(line, ';') &&
     !/^\s*(?:for|while|if|switch|try|function|class|const|let|var)\b/.test(line);
 }
 
@@ -299,7 +353,7 @@ function extractValueOption(tokens, method) {
   return { remaining, expression };
 }
 
-function completeVariableProperties(line, variables) {
+async function completeVariableProperties(line, variables) {
   const match = line.match(/^(.*)\[([^\]]*)$/);
   const base = match ? match[1] : line;
   const keyPartial = match ? match[2] : '';
@@ -308,7 +362,7 @@ function completeVariableProperties(line, variables) {
   if (!root || !Object.prototype.hasOwnProperty.call(variables, root)) return null;
   let value;
   try {
-    value = vm.runInNewContext(base, variables);
+    value = await vm.runInNewContext(base, variables);
   } catch {
     return [[], line];
   }
@@ -384,6 +438,63 @@ function splitPipeline(line) {
 
 function bodyText(body) {
   return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+}
+
+function parsePipelineOutput(output) {
+  const trimmed = output.trim();
+  if (!trimmed) return output;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const values = [];
+    let index = 0;
+    while (index < trimmed.length) {
+      while (/\s/.test(trimmed[index] || '')) index += 1;
+      if (index >= trimmed.length) break;
+      const start = index;
+      const opening = trimmed[index];
+      if (opening === '{' || opening === '[') {
+        const stack = [opening === '{' ? '}' : ']'];
+        let quote = false;
+        let escaped = false;
+        index += 1;
+        while (index < trimmed.length && stack.length) {
+          const character = trimmed[index];
+          if (escaped) {
+            escaped = false;
+          } else if (character === '\\' && quote) {
+            escaped = true;
+          } else if (character === '"') {
+            quote = !quote;
+          } else if (!quote && (character === '{' || character === '[')) {
+            stack.push(character === '{' ? '}' : ']');
+          } else if (!quote && (character === '}' || character === ']')) {
+            if (stack[stack.length - 1] !== character) return output;
+            stack.pop();
+          }
+          index += 1;
+        }
+        if (stack.length) return output;
+      } else if (opening === '"') {
+        index += 1;
+        let escaped = false;
+        while (index < trimmed.length) {
+          const character = trimmed[index++];
+          if (escaped) escaped = false;
+          else if (character === '\\') escaped = true;
+          else if (character === '"') break;
+        }
+      } else {
+        while (index < trimmed.length && !/\s/.test(trimmed[index])) index += 1;
+      }
+      try {
+        values.push(JSON.parse(trimmed.slice(start, index)));
+      } catch {
+        return output;
+      }
+    }
+    return values.length > 1 ? values : output;
+  }
 }
 
 function formatHistory(history) {
@@ -505,6 +616,43 @@ function runShellCommand(command, input, output) {
   });
 }
 
+function runShellCommandCapture(command, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('/bin/sh', ['-c', command], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.stdin.on('error', (error) => {
+      if (error.code !== 'EPIPE' && !settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+    child.on('error', (error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+    child.on('close', (code, signal) => {
+      if (settled) return;
+      if (code !== 0) {
+        settled = true;
+        const suffix = signal ? ` (signal ${signal})` : '';
+        reject(new Error(`Pipeline command failed with exit code ${code}${suffix}${stderr ? `: ${stderr.trim()}` : ''}`));
+        return;
+      }
+      settled = true;
+      resolve(stdout);
+    });
+    child.stdin.end(input);
+  });
+}
+
 function createRepl(output = process.stdout, input = process.stdin, requestGet, historyFile = HISTORY_FILE) {
   const parameterFile = historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env');
   const environment = loadEnvironment(parameterFile);
@@ -598,13 +746,20 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   });
   Object.defineProperty(variables, '$', {
     value: async (command) => {
-      const tokens = tokenize(expandVariables(command, variables));
+      const expandedCommand = expandVariables(command, variables);
+      const [commandLine, pipeline] = splitPipeline(expandedCommand);
+      const tokens = tokenize(commandLine);
       const method = tokens.shift()?.toLowerCase();
       if (method !== 'get') {
         throw new Error('JavaScript $() currently supports only the get command');
       }
       const request = parseGetArguments(tokens);
       const response = await apiRegistry.get(settings, request.path, request.query, requestGet);
+      if (pipeline !== null) {
+        if (!pipeline) throw new Error('Pipeline command cannot be empty');
+        const output = await runShellCommandCapture(pipeline, `${bodyText(response.body)}\n`);
+        return parsePipelineOutput(output);
+      }
       return response.body;
     },
     enumerable: false
@@ -649,9 +804,14 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
 
   async function execute(line) {
     const executeJavaScript = async (source) => {
-      const value = await evaluateJavaScript(source, variables, false, isJavaScriptExpression(source));
+      const value = await evaluateJavaScript(
+        source, variables, false, isJavaScriptExpression(source), false
+      );
       persistParameters();
-      if (value !== undefined) output.write(`${JSON.stringify(value)}\n`);
+      if (value !== undefined) {
+        const serialized = JSON.stringify(value);
+        if (serialized !== undefined) output.write(`${serialized}\n`);
+      }
     };
     const trimmedLine = line.trim();
     if (trimmedLine.startsWith('!')) {
@@ -685,7 +845,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       }
       let value;
       try {
-        value = vm.runInNewContext(expression, variables);
+        value = await evaluateJavaScript(expression, variables, true, true, false);
       } catch (error) {
         throw new Error(`Unable to evaluate show expression: ${error.message}`, { cause: error });
       }
@@ -729,6 +889,14 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       }
       recorder.setMode(action);
       settings.recordMode = action;
+      return true;
+    }
+    if (command === 'find') {
+      const request = parseFindArguments(tokens);
+      const matches = await findResources(settings, request.path, request.query, requestGet);
+      const outputBody = JSON.stringify(matches, null, 2);
+      if (pipeline !== null) await runShellCommand(pipeline, `${outputBody}\n`, output);
+      else output.write(`${outputBody}\n`);
       return true;
     }
     if (command !== 'get' && command !== 'post' && command !== 'put') {
@@ -792,7 +960,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         return [sortCandidates(Object.keys(variables)), expression];
       }
       return completeVariableReference(expression, variables) ||
-        completeVariableProperties(expression, variables) ||
+        await completeVariableProperties(expression, variables) ||
         completeVariableName(expression, variables) || [[], expression];
     }
     if (/^[A-Za-z_$][\w$]*$/.test(line)) {
@@ -804,7 +972,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     }
     const variableReference = completeVariableReference(line, variables);
     if (variableReference) return variableReference;
-    const variableCompletion = completeVariableProperties(line, variables);
+    const variableCompletion = await completeVariableProperties(line, variables);
     if (variableCompletion) return variableCompletion;
     if (/^\S*$/.test(line)) {
       return [sortCandidates(COMMANDS.filter((command) => command.startsWith(line))), line];
@@ -814,6 +982,11 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const partial = recordMatch[1];
       return [sortCandidates(['auto', 'off', 'on', 'show'].filter((value) =>
         value.startsWith(partial))), partial];
+    }
+    const findOptionMatch = line.match(/^find\s+\S+\s+(-\S*)$/);
+    if (findOptionMatch) {
+      const token = findOptionMatch[1];
+      return [sortCandidates(['-q'].filter((option) => option.startsWith(token))), token];
     }
     const optionMatch = line.match(/^(get|post|put)\s+(-\S*)$/);
     if (optionMatch) {
@@ -825,7 +998,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const token = queryMatch[2];
       return [sortCandidates(QUERY_PARAMETER_CANDIDATES.filter((candidate) => candidate.startsWith(token))), token];
     }
-    const match = line.match(/^(get|post|put)\s+(\S*)$/);
+    const match = line.match(/^(get|post|put|find)\s+(\S*)$/);
     if (!match) return [[], line];
     const inputPath = match[2] || '/';
     const result = await apiRegistry.completeMethod(
@@ -855,7 +1028,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   rl = readline.createInterface({
     input,
     output,
-    prompt: 'prompt> ',
+    prompt: 'akamai> ',
     history: loadHistory(),
     historySize: HISTORY_SIZE,
     removeHistoryDuplicates: true,
@@ -993,6 +1166,7 @@ module.exports = {
   createRepl,
   parseQuery,
   parseGetArguments,
+  parseFindArguments,
   parseWriteArguments,
   QUERY_PARAMETER_CANDIDATES,
   COMMANDS,
