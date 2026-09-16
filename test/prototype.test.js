@@ -211,7 +211,7 @@ test('completes command names', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('supports the question-mark help alias and current unknown-command error', async () => {
+test('supports the question-mark help alias and JavaScript fallback', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-command-errors-'));
@@ -222,8 +222,9 @@ test('supports the question-mark help alias and current unknown-command error', 
   const help = output.read().toString();
   assert.match(help, /Commands:/);
 
-  await repl.execute('not-a-command');
-  assert.equal(output.read().toString(), 'ERROR: Unknown command - type `help` for help\n');
+  await repl.execute('foo = []');
+  await repl.execute('[1,2,3].forEach(v => foo.push(v))');
+  assert.equal(JSON.stringify(repl.variables.foo), '[1,2,3]');
 
   repl.rl.close();
   input.destroy();

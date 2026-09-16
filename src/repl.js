@@ -253,8 +253,9 @@ function parseWriteArguments(tokens, method = 'POST') {
   return { ...request, body };
 }
 
-function evaluateJavaScript(expression, variables) {
+function evaluateJavaScript(expression, variables, requireValue = true) {
   const value = vm.runInNewContext(expression, variables);
+  if (value === undefined && !requireValue) return value;
   if (value === undefined) throw new Error('JavaScript expression must produce a JSON value');
   try {
     const serialized = JSON.stringify(value);
@@ -660,7 +661,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command !== 'get' && command !== 'post' && command !== 'put') {
-      output.write('ERROR: Unknown command - type `help` for help\n');
+      evaluateJavaScript(commandLine, variables, false);
       return true;
     }
 

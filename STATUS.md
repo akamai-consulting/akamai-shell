@@ -52,6 +52,9 @@ Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
 - Shell variables support `$name`, property, and index expansion (for example
   `$foo["items"][0]`); command-line expansion uses the variable's JSON
   serialization (so a string includes its JSON quotes).
+- Lines that are not recognized as shell commands are evaluated as JavaScript,
+  allowing snippets such as `[1,2,3].forEach(v => console.log(v))`; shell
+  commands retain precedence.
 - The experimental JavaScript session scope accepts trusted statements such as
   `foo = {"items":[]}`, `foo["name"] = "value"`, and `delete foo["items"]`.
   POST and PUT also accept `-v <expression>` to use a JSON-serializable session
