@@ -294,6 +294,10 @@ function isJavaScriptStatement(line) {
   return /^\s*(?:[A-Za-z_$][\w$]*\s*(?:=|[[(])|delete\s+)/.test(line);
 }
 
+function isJavaScriptExpression(line) {
+  return !/^\s*(?:for|while|if|switch|try|function|class|const|let|var)\b/.test(line);
+}
+
 function extractValueOption(tokens, method) {
   const remaining = [];
   let expression;
@@ -531,6 +535,10 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   async function execute(line) {
+    const executeJavaScript = async (source) => {
+      const value = await evaluateJavaScript(source, variables, false, isJavaScriptExpression(source));
+      if (value !== undefined) output.write(`${JSON.stringify(value)}\n`);
+    };
     const trimmedLine = line.trim();
     if (trimmedLine.startsWith('!')) {
       const shellCommand = trimmedLine.slice(1).trim();
@@ -539,7 +547,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (isJavaScriptStatement(line)) {
-      await evaluateJavaScript(line, variables, false);
+      await executeJavaScript(line);
       return true;
     }
     const expandedLine = expandVariables(line, variables);
@@ -692,7 +700,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command !== 'get' && command !== 'post' && command !== 'put') {
-      await evaluateJavaScript(commandLine, variables, false);
+      await executeJavaScript(commandLine);
       return true;
     }
 

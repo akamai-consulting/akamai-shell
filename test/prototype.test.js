@@ -138,7 +138,9 @@ test('calls Akamai get commands through the JavaScript $ function', async () => 
 
   output.read();
   await repl.execute('pid = 371982');
+  output.read();
   await repl.execute('foo = $("get /cloudlets/api/v2/policies/$pid/versions/1")');
+  output.read();
   assert.deepEqual(JSON.parse(JSON.stringify(repl.variables.foo)), {
     version: 1,
     description: 'test'
@@ -252,8 +254,11 @@ test('supports the question-mark help alias and JavaScript fallback', async () =
   assert.match(help, /Commands:/);
 
   await repl.execute('foo = []');
+  output.read();
   await repl.execute('[1,2,3].forEach(v => foo.push(v))');
   assert.equal(JSON.stringify(repl.variables.foo), '[1,2,3]');
+  await repl.execute('foo');
+  assert.equal(output.read().toString(), '[1,2,3]\n');
   await repl.execute('console.log(123)');
   assert.equal(output.read().toString(), '123\n');
 
@@ -652,6 +657,7 @@ test('expands indexed JavaScript variable values in command lines', async () => 
   printed = '';
 
   await repl.execute('foo = {"aaa":[1,2,3],"bbb":"hoge"}');
+  printed = '';
   await repl.execute('echo $foo["aaa"]');
   assert.equal(printed, '[1,2,3]\n');
 

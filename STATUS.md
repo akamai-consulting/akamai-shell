@@ -59,6 +59,8 @@ Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
 - JavaScript can call the experimental asynchronous `$` helper with
   `await $('get /api/path')`; it returns the decoded response body without
   printing the nested command output. The helper currently supports `get`.
+  JavaScript expressions with a non-undefined outermost result print that
+  value as JSON; `console.log` output is not duplicated.
 - The experimental JavaScript session scope accepts trusted statements such as
   `foo = {"items":[]}`, `foo["name"] = "value"`, and `delete foo["items"]`.
   POST and PUT also accept `-v <expression>` to use a JSON-serializable session
