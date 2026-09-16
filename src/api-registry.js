@@ -114,7 +114,8 @@ function catalogForPrefix(prefix) {
   const service = prefix.replace(/^\/|\/$/g, '');
   const candidates = [
     path.join(REFERENCE_ROOT, service, 'openapi.json'),
-    path.join(REFERENCE_ROOT, service.replace(/\/v\d+$/, ''), 'openapi.json')
+    path.join(REFERENCE_ROOT, service.replace(/\/v\d+$/, ''), 'openapi.json'),
+    path.join(REFERENCE_ROOT, service.replace(/\/api\/v\d+$/, '/v2'), 'openapi.json')
   ];
   let catalog = null;
   for (const filePath of candidates) {

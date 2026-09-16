@@ -128,6 +128,21 @@ test('routes Cloudlets v2 policy version POST requests', async () => {
   });
 });
 
+test('provides Cloudlets v2 POST body help', () => {
+  const parameters = apiRegistry.parameterHelp(
+    'POST',
+    '/cloudlets/api/v2/policies/371982/versions'
+  );
+  assert.deepEqual(parameters.map(({ name }) => name), [
+    'policyId',
+    'cloneVersion',
+    'accountSwitchKey',
+    'description',
+    'matchRules',
+    'matchRulesFormat'
+  ]);
+});
+
 test('normalizes a fetched Cloudlets Request Control version for PUT', () => {
   const cloudlets = apiRegistry.moduleFor('/cloudlets/v3/policies/371861/versions/1');
   assert.deepEqual(cloudlets.putPolicyVersionBody({
