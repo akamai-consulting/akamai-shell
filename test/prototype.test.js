@@ -730,6 +730,24 @@ test('defines, expands, lists, and unsets custom variables', async () => {
       output.destroy();
       fs.rmSync(directory, { recursive: true, force: true });
     });
+
+    test('pipes show output to shell commands', async () => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-show-pipeline-'));
+      const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+      output.read();
+      await repl.execute('foo = {"id":123}');
+      output.read();
+      await repl.execute('show foo | jq .id');
+      assert.equal(output.read().toString(), '123\n');
+
+      repl.rl.close();
+      input.destroy();
+      output.destroy();
+      fs.rmSync(directory, { recursive: true, force: true });
+    });
   });
   const repl = createRepl(output, input, undefined, historyPath);
 

@@ -679,7 +679,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     if (command === 'show') {
       const expression = commandLine.slice(command.length).trim();
       if (!expression) {
-        output.write(`${JSON.stringify(variables, null, 2)}\n`);
+        const rendered = `${JSON.stringify(variables, null, 2)}\n`;
+        if (pipeline !== null) await runShellCommand(pipeline, rendered, output);
+        else output.write(rendered);
         return true;
       }
       let value;
@@ -699,7 +701,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
           cause: error
         });
       }
-      output.write(`${rendered}\n`);
+      const renderedOutput = `${rendered}\n`;
+      if (pipeline !== null) await runShellCommand(pipeline, renderedOutput, output);
+      else output.write(renderedOutput);
       return true;
     }
     if (command === 'echo') {
