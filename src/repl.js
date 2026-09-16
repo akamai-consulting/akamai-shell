@@ -317,9 +317,11 @@ function extractValueOption(tokens, method) {
 
 function completeVariableProperties(line, variables) {
   const match = line.match(/^(.*)\[([^\]]*)$/);
-  if (!match) return null;
-  const [, base, keyPartial] = match;
-  if (!/^(?:[A-Za-z_$][\w$]*|\S+\])/.test(base)) return null;
+  const base = match ? match[1] : line;
+  const keyPartial = match ? match[2] : '';
+  if (!/^(?:[A-Za-z_$][\w$]*|\S+\])(?:\[[^\]]+\])*$/.test(base)) return null;
+  const root = base.match(/^[A-Za-z_$][\w$]*/)?.[0];
+  if (!root || !Object.prototype.hasOwnProperty.call(variables, root)) return null;
   let value;
   try {
     value = vm.runInNewContext(base, variables);
@@ -330,10 +332,11 @@ function completeVariableProperties(line, variables) {
     return [[], line];
   }
   const partial = keyPartial.replace(/^['"]/, '');
+  const candidatePrefix = match ? `${base}[` : `${base}[`;
   const keys = Object.keys(value)
     .filter((key) => !Array.isArray(value) || /^\d+$/.test(key))
     .filter((key) => key.startsWith(partial))
-    .map((key) => `${base}[${Array.isArray(value) ? key : JSON.stringify(key)}]`);
+    .map((key) => `${candidatePrefix}${Array.isArray(value) ? key : JSON.stringify(key)}]`);
   return [sortCandidates(keys), line];
 }
 

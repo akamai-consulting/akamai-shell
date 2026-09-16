@@ -253,6 +253,10 @@ test('completes JavaScript object keys and array indices', async () => {
     ['foo["aaa"]', 'foo["bbb"]'],
     'foo['
   ]);
+  assert.deepEqual(await repl.complete('foo["aaa"]'), [
+    ['foo["aaa"][0]', 'foo["aaa"][1]'],
+    'foo["aaa"]'
+  ]);
   assert.deepEqual(await repl.complete('foo["aaa"]['), [
     ['foo["aaa"][0]', 'foo["aaa"][1]'],
     'foo["aaa"]['
