@@ -53,7 +53,7 @@ never displayed or persisted by the shell.
 | `post|put -f <file> <api-path>` | Read a JSON request body from a file. |
 | `find <api-path> -q <rule>` | Fetch one response and find matching dictionaries locally. |
 | `show [expression]` | Display the session namespace or one JSON value. |
-| `echo <text>` | Print text after variable expansion. |
+| `echo <text> [\| command]` | Print expanded text, optionally through a local shell pipeline. |
 | `record auto\|on\|off` | Control redacted in-memory request recording. |
 | `record show [--http]` | Display captured JSONL or HTTP-style records. |
 | `history` | Display command history. |
@@ -107,6 +107,21 @@ local pipeline:
 
 ```javascript
 properties = $(`get /papi/v1/properties | jq '.properties.items[]'`)
+```
+
+It can also capture a local shell command. This is useful for loading external
+JSON into the JavaScript session:
+
+```javascript
+foo = $('! cat foo.json')
+```
+
+Shell output is parsed as JSON when possible; non-JSON output remains a string.
+
+The `echo` command can pipe expanded JSON variables to local tools:
+
+```text
+echo "$foo" | jq '. | keys'
 ```
 
 JavaScript values can be used as complete POST or PUT bodies. Quoting a

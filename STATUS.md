@@ -4,8 +4,8 @@
 
 - Project: `akamai-shell`, an interactive Akamai API shell with method-aware
   JSON write support.
-- Active branch: `feature/edge-diagnostics-write`.
-- Latest merge commit: `0f1e460 Merge modular API architecture`.
+- Active branch: `main`.
+- Latest commit: `ea12988 Add project README`.
 - `ref/akamai-apis` is a git submodule at the pinned OpenAPI source revision;
   other supplied `ref/` directories remain unrelated embedded repositories.
 - Runtime: Node.js CommonJS with `akamai-edgegrid@4.0.4`.
@@ -28,7 +28,6 @@ Cloudlets v2 supports its OpenAPI-derived POST policy-version operations.
 Property Manager supports creating property versions with POST and its
 OpenAPI-derived PUT rule-tree operations. POST, PUT parsing, routing, and
 transport are implemented generically. Unsupported method/path combinations
-fail explicitly.
 Unsupported method/path combinations fail explicitly. Activation/deactivation
 and mutation confirmation flows remain unsupported.
 
@@ -46,12 +45,13 @@ and mutation confirmation flows remain unsupported.
 
 ### Interactive shell
 
-Supported commands include `get`, `post`, `put`, `find`, `save`, `load`,
-`show`, `history`, `echo`, `help`, `exit`, and `quit`.
+Supported commands include `get`, `post`, `put`, `find`, `show`, `history`,
+`echo`, `record`, `help`, `exit`, and `quit`.
 
 - Shell variables support `$name`, property, and index expansion (for example
-  `$foo["items"][0]`); command-line expansion uses the variable's JSON
-  serialization (so a string includes its JSON quotes).
+  `$foo["items"][0]`). API command arguments are tokenized before variable
+  expansion, so quoted JSON values remain intact in commands such as
+  `put -v "$foo" /papi/v1/...`.
 - Runtime configuration is available as the reserved `config` object from
   JavaScript and command interpolation, for example
   `config.contractId = "ctr_123"` and `$config["contractId"]`. User-defined
@@ -62,9 +62,10 @@ Supported commands include `get`, `post`, `put`, `find`, `save`, `load`,
   `error` write to the REPL output.
 - JavaScript can call the experimental asynchronous `$` helper with
   `await $('get /api/path')`; it returns the decoded response body without
-  printing the nested command output. The helper currently supports `get`.
-  JavaScript expressions with a non-undefined outermost result print that
-  value as JSON; `console.log` output is not duplicated.
+  printing the nested command output. It can also capture local shell output
+  with `$(! cat file.json)`, parsing JSON when possible. JavaScript
+  expressions with a non-undefined outermost result print that value as JSON;
+  `console.log` output is not duplicated.
 - The experimental JavaScript session scope accepts trusted statements such as
   `foo = {"items":[]}`, `foo["name"] = "value"`, and `delete foo["items"]`.
   POST and PUT also accept `-v <expression>` to use a JSON-serializable session
@@ -80,15 +81,16 @@ Supported commands include `get`, `post`, `put`, `find`, `save`, `load`,
   GET writes formatted response JSON to the file; POST and PUT read a JSON
   request body from the file.
 - Local shell commands can be run with `! <command>`.
-- GET output supports local shell pipelines.
+- GET and `echo` output support local shell pipelines.
 - Ctrl+R starts reverse incremental history search; repeated Ctrl+R searches
   older matches.
 - History and environment state use persistent paths under
   `~/.config/akamai-shell/` with restrictive permissions.
 - Credential secrets are never persisted or displayed.
-- Session tracing is controlled with `set log-level debug|info|warn|error` and
-  `set log-output stderr|stdout|<file>`; debug traces include redacted HTTP
-  request and response details.
+- Session tracing is controlled with `config.logLevel` and `config.logOutput`;
+  debug traces include redacted HTTP request and response details. The
+  `config` object also persists `edgerc`, `edgercSection`, account context,
+  query defaults, and `recordMode`.
 - Minimal Script Developer Mode is available with `record auto|on|off`,
   `record show`, and `record show --http`; captures are in-memory, redacted
   JSONL records for the current session.
@@ -122,9 +124,10 @@ Supported commands include `get`, `post`, `put`, `find`, `save`, `load`,
 
 ## Tests and validation
 
-The project has 65 passing Node.js tests covering GET and write request
+The project has 318 passing Node.js tests covering GET and write request
 construction, method routing, API-qualified completion, dynamic identifiers,
-persistence, pipelines, shell commands, and reverse history behavior.
+persistence, JavaScript evaluation, token-aware variable expansion,
+pipelines, shell commands, recording, and reverse history behavior.
 
 Run:
 
@@ -148,7 +151,8 @@ npm start
   selection syntax.
 - Some completion lookup failures return no dynamic candidates rather than
   exposing detailed lookup diagnostics.
-- There is no dedicated user-facing README or installation guide.
+- External Node.js module loading through `require` or `import` is not exposed
+  to the JavaScript session.
 
 ## Important files
 
@@ -166,4 +170,6 @@ npm start
 - `src/catalog.js` - PAPI OpenAPI catalog adapter and dynamic descriptors.
 - `src/apis/` - API-specific modules.
 - `test/` - unit and regression tests.
+- `README.md` - installation, command reference, JavaScript examples, and
+  interactive usage guide.
 - `AGENTS.md` - project requirements and design guidance.

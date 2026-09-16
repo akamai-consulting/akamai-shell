@@ -17,6 +17,8 @@ const HISTORY_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'history
 const ENV_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'env');
 const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
+const VARIABLE_PATTERN =
+  /\$([A-Za-z_$][\w$]*(?:(?:\.[A-Za-z_$][\w$]*)|(?:\[(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\]]+)\]))*)/g;
 const CONFIG_NAMES = [
   'edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId',
   'logLevel', 'logOutput', 'recordMode', 'parameterDefaults',
@@ -314,7 +316,7 @@ function hasUnquotedCharacter(value, target) {
 
 function expandVariables(value, variables) {
   return value.replace(
-    /\$([A-Za-z_$][\w$]*(?:(?:\.[A-Za-z_$][\w$]*)|(?:\[(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\]]+)\]))*)/g,
+    VARIABLE_PATTERN,
     (match, expression) => {
       const variable = expression.match(/^[A-Za-z_$][\w$]*/)[0];
       if (!Object.prototype.hasOwnProperty.call(variables, variable)) return '';
@@ -325,6 +327,22 @@ function expandVariables(value, variables) {
       }
     }
   );
+}
+
+function expandTokenizedArguments(value, variables) {
+  const replacements = new Map();
+  const protectedValue = value.replace(VARIABLE_PATTERN, (match) => {
+    const placeholder = `__akamai_variable_${replacements.size}__`;
+    replacements.set(placeholder, expandVariables(match, variables));
+    return placeholder;
+  });
+  return tokenize(protectedValue).map((token) => {
+    let expanded = token;
+    for (const [placeholder, replacement] of replacements) {
+      expanded = expanded.replace(placeholder, replacement);
+    }
+    return expanded;
+  });
 }
 
 function isJavaScriptStatement(line) {
@@ -767,7 +785,15 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   Object.defineProperty(variables, '$', {
     value: async (command) => {
       const [commandLine, pipeline] = splitPipeline(command);
-      const tokens = tokenize(commandLine).map((token) => expandVariables(token, variables));
+      if (commandLine.trim().startsWith('!')) {
+        const shellCommand = commandLine.trim().slice(1).trim();
+        if (!shellCommand) throw new Error('Usage: $(! <shell command>)');
+        const output = await runShellCommandCapture(
+          expandVariables(shellCommand, variables), ''
+        );
+        return parsePipelineOutput(output);
+      }
+      const tokens = expandTokenizedArguments(commandLine, variables);
       const method = tokens.shift()?.toLowerCase();
       if (method !== 'get') {
         throw new Error('JavaScript $() currently supports only the get command');
@@ -849,12 +875,10 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     const initialTokens = tokenize(commandLine);
     const initialCommand = initialTokens[0]?.toLowerCase();
     const requestCommand = ['get', 'post', 'put'].includes(initialCommand);
-    const expandedCommandLine = requestCommand
-      ? commandLine
-      : expandVariables(commandLine, variables);
-    const tokens = tokenize(expandedCommandLine).map((token) =>
-      requestCommand ? expandVariables(token, variables) : token
-    );
+    const tokenAwareCommand = requestCommand || initialCommand === 'echo';
+    const tokens = tokenAwareCommand
+      ? expandTokenizedArguments(commandLine, variables)
+      : tokenize(expandVariables(commandLine, variables));
     const expandedPipeline = pipeline === null ? null : expandVariables(pipeline, variables);
     if (!tokens.length) return true;
     const command = tokens.shift().toLowerCase();
@@ -895,7 +919,13 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command === 'echo') {
-      output.write(`${expandVariables(commandLine.slice(command.length).trim(), variables)}\n`);
+      const echoOutput = `${tokens.join(' ')}\n`;
+      if (expandedPipeline !== null) {
+        if (!expandedPipeline) throw new Error('Pipeline command cannot be empty');
+        await runShellCommand(expandedPipeline, echoOutput, output);
+      } else {
+        output.write(echoOutput);
+      }
       return true;
     }
     if (command === 'history') {

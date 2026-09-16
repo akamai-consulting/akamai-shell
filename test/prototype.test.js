@@ -185,6 +185,24 @@ test('captures JavaScript $ helper pipeline output', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('loads JSON from a local shell command through the JavaScript $ helper', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-shell-'));
+  const jsonPath = path.join(directory, 'foo.json');
+  fs.writeFileSync(jsonPath, '{"name":"example","enabled":true}\n');
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute(`foo = $('! cat ${jsonPath}')`);
+  assert.deepEqual(repl.variables.foo, { name: 'example', enabled: true });
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('prints JSON results from pipelines containing quoted semicolons', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
@@ -766,6 +784,24 @@ test('pipes POST responses to shell commands', async () => {
   output.read();
   await repl.execute('post /cloudlets/api/v2/policies/371982/versions description=test | jq .id');
   assert.equal(output.read().toString(), '123\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('pipes echo output to shell commands', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-echo-pipeline-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('foo = {"a":1,"b":2}');
+  output.read();
+  await repl.execute('echo "$foo" | jq ". | keys"');
+  assert.equal(output.read().toString(), '[\n  "a",\n  "b"\n]\n');
 
   repl.rl.close();
   input.destroy();
