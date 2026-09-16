@@ -2,11 +2,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const { sortCandidates } = require('./path-completion');
+const { loadOpenApiCatalog, REFERENCE_ROOT } = require('./openapi-catalog');
 
 const API_MODULES = fs.readdirSync(path.join(__dirname, 'apis'))
   .filter((file) => file.endsWith('.js'))
   .sort()
   .map((file) => require(path.join(__dirname, 'apis', file)));
+const CATALOG_CACHE = new Map();
 
 function register(apiModule) {
   if (!apiModule || typeof apiModule.supports !== 'function' ||
@@ -46,11 +49,17 @@ function moduleForMethod(method, apiPath) {
 }
 
 function get(settings, apiPath, query, requestGet) {
-  return moduleForMethod('GET', apiPath).get(settings, apiPath, query, requestGet);
+  const apiModule = moduleForMethod('GET', apiPath);
+  settings.logger?.debug('API module selected', { module: apiModule.name, method: 'GET', path: apiPath });
+  return apiModule.get(settings, apiPath, query, requestGet);
 }
 
 function dispatch(method, settings, apiPath, query = {}, body, requestMethod) {
-  return moduleForMethod(method, apiPath)
+  const apiModule = moduleForMethod(method, apiPath);
+  settings.logger?.debug('API module selected', {
+    module: apiModule.name, method: method.toUpperCase(), path: apiPath
+  });
+  return apiModule
     .dispatch(settings, apiPath, method, query, body, requestMethod);
 }
 
@@ -75,7 +84,7 @@ async function completeMethod(method, apiPath, settings, cache, requestGet) {
   }
   const results = await Promise.all(modules.map((apiModule) =>
     apiModule.completeMethod(method, apiPath, settings, cache, requestGet)));
-  return [[...new Set(results.flatMap(([candidates]) => candidates))], apiPath];
+  return [sortCandidates(new Set(results.flatMap(([candidates]) => candidates))), apiPath];
 }
 
 async function complete(apiPath, settings, cache, requestGet) {
@@ -85,7 +94,7 @@ async function complete(apiPath, settings, cache, requestGet) {
   }
   const results = await Promise.all(modules.map((apiModule) =>
     apiModule.complete(apiPath, settings, cache, requestGet)));
-  return [[...new Set(results.flatMap(([candidates]) => candidates))], apiPath];
+  return [sortCandidates(new Set(results.flatMap(([candidates]) => candidates))), apiPath];
 }
 
 function completeSetting(setting, partial, settings, cache, requestGet) {
@@ -98,6 +107,67 @@ function completeSetting(setting, partial, settings, cache, requestGet) {
 function queryParameters() {
   return [...new Set(API_MODULES.flatMap((apiModule) =>
     apiModule.queryParameters || []))];
+}
+
+function catalogForPrefix(prefix) {
+  if (CATALOG_CACHE.has(prefix)) return CATALOG_CACHE.get(prefix);
+  const service = prefix.replace(/^\/|\/$/g, '');
+  const candidates = [
+    path.join(REFERENCE_ROOT, service, 'openapi.json'),
+    path.join(REFERENCE_ROOT, service.replace(/\/v\d+$/, ''), 'openapi.json')
+  ];
+  let catalog = null;
+  for (const filePath of candidates) {
+    if (!fs.existsSync(filePath)) continue;
+    catalog = loadOpenApiCatalog({ filePath });
+    break;
+  }
+  CATALOG_CACHE.set(prefix, catalog);
+  return catalog;
+}
+
+function pathMatchesTemplate(apiPath, template) {
+  const actual = apiPath.split('/').filter(Boolean);
+  const expected = template.split('/').filter(Boolean);
+  return actual.length === expected.length && expected.every((part, index) =>
+    (part.startsWith('{') && part.endsWith('}')) || part === actual[index]);
+}
+
+function hasCompletionDescendants(apiPath, method = 'GET') {
+  return API_MODULES.some((apiModule) => {
+    if (!apiModule.supports(apiPath)) return false;
+    const relative = apiPath === apiModule.prefix
+      ? '/'
+      : apiPath.slice(apiModule.prefix.length);
+    const actual = relative.split('/').filter(Boolean);
+    const paths = apiModule.methodStaticPaths?.[method.toUpperCase()] ||
+      apiModule.staticPaths || [];
+    return paths.some((template) => {
+      const expected = template.split('/').filter(Boolean);
+      return expected.length > actual.length && actual.every((part, index) => {
+        const expectedPart = expected[index];
+        return expectedPart.startsWith('{') && expectedPart.endsWith('}')
+          ? true : expectedPart === part;
+      });
+    });
+  });
+}
+
+function parameterHelp(method, apiPath, parameterName) {
+  return modulesFor(apiPath).flatMap((apiModule) => {
+    const catalog = catalogForPrefix(apiModule.prefix);
+    if (!catalog) return [];
+    const relative = apiPath === apiModule.prefix
+      ? '/'
+      : apiPath.slice(apiModule.prefix.length);
+    const operations = catalog.operations.filter((operation) =>
+      operation.method === method.toUpperCase() &&
+      (relative === '/' || pathMatchesTemplate(relative, operation.path)));
+    const parameters = operations.flatMap((operation) => operation.parameters || []);
+    const unique = new Map(parameters.map((parameter) => [parameter.name, parameter]));
+    return [...unique.values()].filter((parameter) =>
+      !parameterName || parameter.name === parameterName);
+  });
 }
 
 module.exports = {
@@ -114,5 +184,7 @@ module.exports = {
   complete,
   completeMethod,
   completeSetting,
-  queryParameters
+  queryParameters,
+  parameterHelp,
+  hasCompletionDescendants
 };

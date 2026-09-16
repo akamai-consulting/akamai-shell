@@ -1,6 +1,7 @@
 'use strict';
 
 const EdgeGrid = require('akamai-edgegrid');
+const { redact } = require('./logger');
 
 function parseBody(body) {
   if (Buffer.isBuffer(body)) return body;
@@ -69,18 +70,41 @@ async function requestMethod(settings, apiPath, method, query = {}, body,
       requestHeaders['content-type'] === undefined) {
     requestHeaders['Content-Type'] = 'application/json';
   }
-  const response = await send(clientFactory(settings), {
+  const request = {
     path: `${prefix}${normalizedPath}`,
     method: normalizedMethod,
     headers: requestHeaders,
     qs,
     ...(body === undefined ? {} : { body })
-  });
-  return {
+  };
+  const recording = settings.recorder?.begin(request);
+  settings.logger?.debug('HTTP request', redact(request));
+  let response;
+  try {
+    response = await send(clientFactory(settings), request);
+  } catch (error) {
+    settings.recorder?.complete(recording, undefined, error);
+    settings.logger?.error('HTTP request failed', {
+      method: normalizedMethod,
+      path: request.path,
+      statusCode: error.statusCode,
+      message: error.message,
+      body: error.body
+    });
+    throw error;
+  }
+  const parsedResponse = {
     statusCode: response.statusCode,
     headers: response.headers,
     body: parseBody(response.body)
   };
+  settings.recorder?.complete(recording, parsedResponse);
+  settings.logger?.debug('HTTP response', {
+    statusCode: response.statusCode,
+    headers: response.headers,
+    body: parsedResponse.body
+  });
+  return parsedResponse;
 }
 
 module.exports = {

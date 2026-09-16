@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { request, requestMethod } = require('../src/edgegrid-transport');
+const { createRecorder } = require('../src/recorder');
 
 test('applies accountSwitchKey and parameter defaults to generic API requests', async () => {
   let sent;
@@ -54,6 +55,24 @@ test('constructs signed arbitrary-method JSON requests with response metadata', 
     },
     qs: { region: 'eu', accountSwitchKey: '1-ACCOUNT' },
     body: { url: 'https://example.test', follow: true }
+  });
+
+  test('records transport requests and responses', async () => {
+    const recorder = createRecorder();
+    recorder.setMode('on');
+    await request({
+      edgerc: '/tmp/test-edgerc',
+      edgercSection: 'papi',
+      recorder
+    }, '/properties', {}, () => ({
+      auth() { return this; },
+      send(callback) {
+        callback(null, { status: 200, headers: {} }, '{"ok":true}');
+      }
+    }), '/papi/v1');
+
+    assert.equal(recorder.records.length, 1);
+    assert.equal(JSON.parse(recorder.jsonl()).response.body.ok, true);
   });
   assert.deepEqual(response, {
     statusCode: 202,

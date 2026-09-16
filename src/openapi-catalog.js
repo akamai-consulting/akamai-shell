@@ -31,6 +31,11 @@ function resolveParameter(document, parameter) {
   return resolved;
 }
 
+function resolveSchema(document, schema) {
+  if (schema && schema.$ref) return resolveReference(document, schema.$ref);
+  return schema;
+}
+
 function addPathAndAncestors(paths, endpoint) {
   const parts = endpoint.split('/').filter(Boolean);
   for (let length = 1; length <= parts.length; length += 1) {
@@ -90,6 +95,17 @@ function loadOpenApiCatalog({ service, filePath } = {}) {
         ...pathParameters,
         ...(Array.isArray(operation.parameters) ? operation.parameters : [])
       ].map((parameter) => resolveParameter(document, parameter));
+      const requestSchema = resolveSchema(document,
+        operation.requestBody?.content?.['application/json']?.schema);
+      const bodyParameters = requestSchema && requestSchema.properties
+        ? Object.entries(requestSchema.properties).map(([name, schema]) => ({
+          name,
+          in: 'body',
+          description: schema.description || requestSchema.description,
+          required: Array.isArray(requestSchema.required) && requestSchema.required.includes(name),
+          schema: resolveSchema(document, schema)
+        }))
+        : [];
       const queries = [...new Set(parameters
         .filter((parameter) => parameter.in === 'query' && parameter.name)
         .map((parameter) => parameter.name))];
@@ -108,7 +124,8 @@ function loadOpenApiCatalog({ service, filePath } = {}) {
       operations.push({
         method: normalizedMethod,
         path: endpoint,
-        queryParameters: queries
+        queryParameters: queries,
+        parameters: [...parameters, ...bodyParameters]
       });
     }
   }

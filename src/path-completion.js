@@ -15,6 +15,10 @@ function supportsPrefix(prefix, apiPath) {
     apiPath.startsWith(`${prefix}/`);
 }
 
+function sortCandidates(candidates) {
+  return [...candidates].sort((left, right) => left.localeCompare(right));
+}
+
 function relativePath(prefix, apiPath) {
   if (apiPath === prefix) return '/';
   return apiPath.startsWith(`${prefix}/`) ? apiPath.slice(prefix.length) : apiPath;
@@ -53,7 +57,7 @@ function staticCandidates(input, templates) {
     const candidate = `/${resolvedParts.join('/')}`;
     if (matches && candidate.startsWith(prefix)) candidates.add(candidate);
   }
-  return [...candidates];
+  return sortCandidates(candidates);
 }
 
 function dynamicMatches(matches, input) {
@@ -81,11 +85,11 @@ function dynamicCandidates(input, body, descriptor) {
     : [];
   if (!Array.isArray(items)) return [];
   const partial = input.slice(prefix.length).toLowerCase();
-  return items
+  return sortCandidates(items
     .map((item) => item && item[descriptor.key])
     .filter((value) => value !== undefined &&
       String(value).toLowerCase().startsWith(partial))
-    .map(String);
+    .map(String));
 }
 
 function stableValue(value) {
@@ -143,6 +147,7 @@ function restorePrefix(prefix, apiPath, candidates) {
 module.exports = {
     hasIncompleteDynamicSegment,
     supportsPrefix,
+    sortCandidates,
     relativePath,
     staticCandidates,
     dynamicCollectionFor,
