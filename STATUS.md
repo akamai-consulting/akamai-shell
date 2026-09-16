@@ -46,10 +46,29 @@ and mutation confirmation flows remain unsupported.
 
 ### Interactive shell
 
-Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
+Supported commands include `get`, `post`, `put`, `save`, `load`,
 `show`, `history`, `echo`, `help`, `exit`, and `quit`.
 
-- Shell variables support `$name` expansion.
+- Shell variables support `$name`, property, and index expansion (for example
+  `$foo["items"][0]`); command-line expansion uses the variable's JSON
+  serialization (so a string includes its JSON quotes).
+- Runtime configuration is available as the reserved `config` object from
+  JavaScript and command interpolation, for example
+  `config.contractId = "ctr_123"` and `$config["contractId"]`. User-defined
+  variables remain top-level and are not merged into `config`.
+- Lines that are not recognized as shell commands are evaluated as JavaScript,
+  allowing snippets such as `[1,2,3].forEach(v => console.log(v))`; shell
+  commands retain precedence. JavaScript `console.log`, `info`, `warn`, and
+  `error` write to the REPL output.
+- JavaScript can call the experimental asynchronous `$` helper with
+  `await $('get /api/path')`; it returns the decoded response body without
+  printing the nested command output. The helper currently supports `get`.
+  JavaScript expressions with a non-undefined outermost result print that
+  value as JSON; `console.log` output is not duplicated.
+- The experimental JavaScript session scope accepts trusted statements such as
+  `foo = {"items":[]}`, `foo["name"] = "value"`, and `delete foo["items"]`.
+  POST and PUT also accept `-v <expression>` to use a JSON-serializable session
+  value as the complete request body; `-v` cannot be combined with `-f`.
 - `post` and `put` accept HTTPie-like JSON body fields: `name=value` creates a
   string and `name:=value` parses JSON. Query parameters remain available in
   the path or as `name==value` arguments. Writes require a body and do not

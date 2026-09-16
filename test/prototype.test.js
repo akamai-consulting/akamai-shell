@@ -21,7 +21,6 @@ const {
   saveHistory,
   loadParameterDefaults,
   saveParameterDefaults,
-  settingCandidates,
   contextCandidates,
   formatParameterHelp,
   addCompletionSeparator
@@ -35,16 +34,15 @@ test('parses a PAPI path and query parameters', () => {
     query: { limit: '2', accountSwitchKey: 'a:b' }
   });
 
-  test('sets and completes the session log level with info fallback', async () => {
+  test('updates the session log level through config', async () => {
     const output = new PassThrough();
     const input = new PassThrough();
     const repl = createRepl(output, input, undefined, path.join(os.tmpdir(), `history-${Date.now()}`));
 
-    await repl.execute('set log-level debug');
+    await repl.execute('config.logLevel = "debug"');
     assert.equal(repl.settings.logLevel, 'debug');
-    await repl.execute('set log-level invalid');
+    await repl.execute('config.logLevel = "invalid"');
     assert.equal(repl.settings.logLevel, 'info');
-    assert.deepEqual(await repl.complete('set log-level '), [['debug', 'info', 'warn', 'error'], '']);
   });
 });
 
@@ -99,6 +97,64 @@ test('supports string body fields with key=value for PUT', () => {
   });
 });
 
+test('evaluates JavaScript variables and passes JSON bodies with -v', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query, body, method) => {
+    requests.push({ requestPath, query, body, method });
+    return { body: { accepted: true } };
+  }, path.join(directory, 'history'));
+
+  await repl.execute('foo = {"aaa":[1,2,3]}');
+  await repl.execute('foo["bbb"] = 1234');
+  await repl.execute('delete foo["aaa"]');
+  await repl.execute('post -v foo /edge-diagnostics/v1/curl');
+
+  assert.deepEqual(requests[0], {
+    requestPath: '/curl',
+    query: {},
+    body: { bbb: 1234 },
+    method: 'POST'
+  });
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('calls Akamai get commands through the JavaScript $ function', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-command-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query) => {
+    requests.push({ requestPath, query });
+    return { body: { version: 1, description: 'test' } };
+  }, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('pid = 371982');
+  output.read();
+  await repl.execute('foo = $("get /cloudlets/api/v2/policies/$pid/versions/1")');
+  output.read();
+  assert.deepEqual(JSON.parse(JSON.stringify(repl.variables.foo)), {
+    version: 1,
+    description: 'test'
+  });
+  assert.deepEqual(requests, [{
+    requestPath: '/policies/371982/versions/1',
+    query: {}
+  }]);
+  assert.equal(output.read(), null);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('adds a separator only after a complete completion candidate', () => {
   assert.deepEqual(addCompletionSeparator([['/properties'], '/prop']), [
     ['/properties '], '/prop'
@@ -134,6 +190,15 @@ test('adds a separator only after a complete completion candidate', () => {
   assert.deepEqual(addCompletionSeparator([['contractId=='], 'contract']), [
     ['contractId=='], 'contract'
   ]);
+  const variables = { foo: { activations: [{ id: 1 }] } };
+  assert.deepEqual(addCompletionSeparator(
+    [['foo["activations"]'], 'foo["activatio'],
+    variables
+  ), [['foo["activations"]'], 'foo["activatio']);
+  assert.deepEqual(addCompletionSeparator(
+    [['foo["activations"][0]["id"]'], 'foo["activations"][0]["i'],
+    variables
+  ), [['foo["activations"][0]["id"] '], 'foo["activations"][0]["i']);
 });
 
 test('formats OpenAPI parameter help for list and detail contexts', () => {
@@ -184,7 +249,67 @@ test('completes command names', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('supports the question-mark help alias and current unknown-command error', async () => {
+test('completes JavaScript object keys and array indices', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  await repl.execute('foo = {"aaa":[10,20],"bbb":"hoge"}');
+  assert.deepEqual(await repl.complete('foo['), [
+    ['foo["aaa"]', 'foo["bbb"]'],
+    'foo['
+  ]);
+  assert.deepEqual(await repl.complete('foo["aaa"]'), [
+    ['foo["aaa"][0]', 'foo["aaa"][1]'],
+    'foo["aaa"]'
+  ]);
+  assert.deepEqual(await repl.complete('foo["aaa"]['), [
+    ['foo["aaa"][0]', 'foo["aaa"][1]'],
+    'foo["aaa"]['
+  ]);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('completes variable references throughout command lines', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-variable-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  await repl.execute('foo = {"activations":[{"id":1}],"status":"active"}');
+  assert.deepEqual(await repl.complete('fo'), [['foo'], 'fo']);
+  assert.deepEqual(await repl.complete('show fo'), [['foo'], 'fo']);
+  assert.deepEqual(await repl.complete('show foo["act'), [
+    ['foo["activations"]'],
+    'foo["act'
+  ]);
+  assert.deepEqual(await repl.complete('show foo["activations"]['), [
+    ['foo["activations"][0]'],
+    'foo["activations"]['
+  ]);
+  assert.deepEqual(await repl.complete('echo $fo'), [['$foo'], '$fo']);
+  assert.deepEqual(await repl.complete('get /path/$fo'), [['$foo'], '$fo']);
+  assert.deepEqual(await repl.complete('echo $foo["act'), [
+    ['$foo["activations"]'],
+    '$foo["act'
+  ]);
+  assert.deepEqual(await repl.complete('echo $foo["activations"]['), [
+    ['$foo["activations"][0]'],
+    '$foo["activations"]['
+  ]);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('supports the question-mark help alias and JavaScript fallback', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-command-errors-'));
@@ -195,8 +320,30 @@ test('supports the question-mark help alias and current unknown-command error', 
   const help = output.read().toString();
   assert.match(help, /Commands:/);
 
-  await repl.execute('not-a-command');
-  assert.equal(output.read().toString(), 'ERROR: Unknown command - type `help` for help\n');
+  await repl.execute('foo = []');
+  output.read();
+  await repl.execute('[1,2,3].forEach(v => foo.push(v))');
+  assert.equal(JSON.stringify(repl.variables.foo), '[1,2,3]');
+  await repl.execute('foo');
+  assert.equal(output.read().toString(), '[1,2,3]\n');
+  await repl.execute('console.log(123)');
+  assert.equal(output.read().toString(), '123\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('executes multiple JavaScript statements on one line', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-statements-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('console.log(1); console.log(2);');
+  assert.equal(output.read().toString(), '1\n2\n');
 
   repl.rl.close();
   input.destroy();
@@ -406,7 +553,9 @@ test('keeps quoted JSON arrays typed for Cloudlets v2 POST bodies', async () => 
 });
 
 test('tokenizes quoted shell values', () => {
-  assert.deepEqual(tokenize('set edgerc "~/.edgerc"'), ['set', 'edgerc', '~/.edgerc']);
+  assert.deepEqual(tokenize('config.edgerc = "~/.edgerc"'), [
+    'config.edgerc', '=', '~/.edgerc'
+  ]);
 });
 
 test('completes dynamic edge hostname identifiers', () => {
@@ -465,21 +614,6 @@ test('resolves nested paths after a dynamic property ID', () => {
   );
 });
 
-test('provides set command setting candidates', () => {
-  assert.deepEqual(settingCandidates(''), [
-    'account-switch-key',
-    'contract-id',
-    'edgerc',
-    'edgerc-section',
-    'group-id',
-    'log-level',
-    'log-output'
-  ]);
-  assert.deepEqual(settingCandidates('edgerc-'), ['edgerc-section']);
-  assert.deepEqual(settingCandidates('account'), ['account-switch-key']);
-  assert.deepEqual(settingCandidates('contract'), ['contract-id']);
-});
-
 test('completes contract and group IDs from collection responses', () => {
   assert.deepEqual(contextCandidates('contract-id', {
     contracts: { items: [{ contractId: 'ctr_one' }, { contractId: 'ctr_two' }] }
@@ -498,6 +632,24 @@ test('splits a get command from a shell pipeline', () => {
     "get '/groups|not-a-pipe'",
     null
   ]);
+});
+
+test('pipes POST responses to shell commands', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-post-pipeline-'));
+  const repl = createRepl(output, input, async () => ({
+    body: { accepted: true, id: 123 }
+  }), path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('post /cloudlets/api/v2/policies/371982/versions description=test | jq .id');
+  assert.equal(output.read().toString(), '123\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
 });
 
 test('runs local shell commands with !', async () => {
@@ -561,18 +713,102 @@ test('defines, expands, lists, and unsets custom variables', async () => {
   output.on('data', (chunk) => {
     printed += chunk.toString();
   });
+
+  test('exposes live shell configuration through config without merging user variables', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-config-'));
+    const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+    await repl.execute('config.contractId = "ctr_js"');
+    await repl.execute('foo = 123');
+    assert.equal(repl.settings.contractId, 'ctr_js');
+    assert.equal(repl.variables.foo, 123);
+    assert.equal(repl.variables.config.foo, undefined);
+    assert.throws(() => {
+      repl.variables.config.foo = 456;
+    }, /Unknown config property/);
+
+    repl.rl.close();
+    input.destroy();
+    output.destroy();
+    fs.rmSync(directory, { recursive: true, force: true     });
+
+    test('pretty prints config and selected variable values with show', async () => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-show-'));
+      const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+      output.read();
+      await repl.execute('foo = {"items":[1,2,3]}');
+      output.read();
+      await repl.execute('show foo["items"]');
+      assert.equal(output.read().toString(), '[\n  1,\n  2,\n  3\n]\n');
+      await repl.execute('show');
+      const allVariables = output.read().toString();
+      assert.match(allVariables, /"config"/);
+      assert.match(allVariables, /"foo"/);
+
+      repl.rl.close();
+      input.destroy();
+      output.destroy();
+      fs.rmSync(directory, { recursive: true, force: true });
+    });
+
+    test('pipes show output to shell commands', async () => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-show-pipeline-'));
+      const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+      output.read();
+      await repl.execute('foo = {"id":123}');
+      output.read();
+      await repl.execute('show foo | jq .id');
+      assert.equal(output.read().toString(), '123\n');
+
+      repl.rl.close();
+      input.destroy();
+      output.destroy();
+      fs.rmSync(directory, { recursive: true, force: true });
+    });
+  });
   const repl = createRepl(output, input, undefined, historyPath);
 
-  await repl.execute('set foo bar baz');
+  await repl.execute('foo = "bar baz"');
   await repl.execute('echo $foo');
-  assert.match(printed, /bar baz\n/);
+  assert.match(printed, /"bar baz"\n/);
   printed = '';
-  await repl.execute('set');
-  assert.match(printed, /"foo": "bar baz"/);
-  await repl.execute('unset foo');
+  await repl.execute('foo');
+  assert.equal(printed, '"bar baz"\n');
+  await repl.execute('delete foo');
   printed = '';
   await repl.execute('echo $foo');
   assert.equal(printed, '\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('expands indexed JavaScript variable values in command lines', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const historyPath = path.join(historyDirectory, 'history');
+  let printed = '';
+  output.on('data', (chunk) => {
+    printed += chunk.toString();
+  });
+  const repl = createRepl(output, input, undefined, historyPath);
+  printed = '';
+
+  await repl.execute('foo = {"aaa":[1,2,3],"bbb":"hoge"}');
+  printed = '';
+  await repl.execute('echo $foo["aaa"]');
+  assert.equal(printed, '[1,2,3]\n');
 
   repl.rl.close();
   input.destroy();
@@ -594,34 +830,32 @@ test('persists parameter defaults separately from history', () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('saves and loads parameter defaults through commands', async () => {
+test('persists configuration and variables automatically', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-env-command-'));
   const historyPath = path.join(directory, 'history');
-  const envPath = path.join(directory, 'saved-env');
   const repl = createRepl(output, input, undefined, historyPath);
 
-  await repl.execute('set edgerc /tmp/custom-edgerc');
-  await repl.execute('set contractId ctr_command');
-  await repl.execute('set foo saved-value');
-  await repl.execute('set edgerc-section papi');
-  await repl.execute(`save -f ${envPath}`);
-  await repl.execute('set contractId ctr_changed');
-  await repl.execute('set edgerc-section changed');
-  await repl.execute('unset foo');
-  await repl.execute(`load -f ${envPath}`);
-  assert.equal(repl.settings.contractId, 'ctr_command');
-  assert.equal(repl.settings.edgerc, '/tmp/custom-edgerc');
-  assert.equal(repl.settings.edgercSection, 'papi');
-  assert.equal(repl.settings.parameterDefaults.contractId, 'ctr_command');
-  assert.equal(repl.settings.parameterDefaults.edgerc, '/tmp/custom-edgerc');
-  assert.equal(repl.settings.parameterDefaults.edgercSection, 'papi');
-  assert.equal(repl.variables.foo, 'saved-value');
+  await repl.execute('config.edgerc = "/tmp/custom-edgerc"');
+  await repl.execute('config.contractId = "ctr_command"');
+  await repl.execute('foo = "saved-value"');
+  await repl.execute('config.edgercSection = "papi"');
 
   repl.rl.close();
   input.destroy();
   output.destroy();
+
+  const nextInput = new PassThrough();
+  const nextOutput = new PassThrough();
+  const next = createRepl(nextOutput, nextInput, undefined, historyPath);
+  assert.equal(next.settings.contractId, 'ctr_command');
+  assert.equal(next.settings.edgerc, '/tmp/custom-edgerc');
+  assert.equal(next.settings.edgercSection, 'papi');
+  assert.equal(next.variables.foo, 'saved-value');
+  next.rl.close();
+  nextInput.destroy();
+  nextOutput.destroy();
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -631,8 +865,8 @@ test('loads the saved EdgeGrid section when starting a new shell', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const first = createRepl(output, input, undefined, historyPath);
-  await first.execute('set foo startup-value');
-  await first.execute('set edgerc-section papi');
+  await first.execute('foo = "startup-value"');
+  await first.execute('config.edgercSection = "papi"');
   first.rl.close();
   input.destroy();
   output.destroy();
@@ -648,23 +882,28 @@ test('loads the saved EdgeGrid section when starting a new shell', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('unset -a clears all API parameter defaults', async () => {
+test('deleting config and variables persists the cleared state', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-unset-all-'));
   const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
 
-  await repl.execute('set contractId ctr_command');
-  await repl.execute('set groupId grp_command');
-  await repl.execute('set limit 10');
-  await repl.execute('set foo bar');
-  const savedDefaults = fs.readFileSync(path.join(directory, 'env'), 'utf8');
-  await repl.execute('unset -a');
+  await repl.execute('config.contractId = "ctr_command"');
+  await repl.execute('config.groupId = "grp_command"');
+  await repl.execute('config.limit = "10"');
+  await repl.execute('foo = "bar"');
+  await repl.execute('delete config.contractId');
+  await repl.execute('delete config.groupId');
+  await repl.execute('delete config.limit');
+  await repl.execute('delete foo');
 
   assert.equal(repl.settings.contractId, '');
   assert.equal(repl.settings.groupId, '');
   assert.deepEqual(repl.settings.parameterDefaults, {});
-  assert.equal(fs.readFileSync(path.join(directory, 'env'), 'utf8'), savedDefaults);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'env'), 'utf8')), {
+    parameters: {},
+    variables: {}
+  });
   await repl.execute('echo $foo');
 
   repl.rl.close();
