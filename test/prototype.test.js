@@ -334,7 +334,7 @@ test('reads Cloudlets PUT bodies from a file', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('routes Cloudlets policy version POST arguments', async () => {
+test('preserves HTTPie-style Cloudlets policy version POST arguments', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-cloudlets-post-'));
@@ -344,11 +344,11 @@ test('routes Cloudlets policy version POST arguments', async () => {
     return { body: { accepted: true } };
   }, path.join(directory, 'history'));
 
-  await repl.execute('post /cloudlets/v3/policies/371861/versions policyId:=371861 matchRules:=[] description==test');
+  await repl.execute('post /cloudlets/v3/policies/371861/versions policyId:=371861 matchRules:=[] description=test');
   assert.deepEqual(requests, [{
     requestPath: '/policies/371861/versions',
-    query: { description: 'test' },
-    body: { policyId: 371861, matchRules: [] },
+    query: {},
+    body: { policyId: 371861, matchRules: [], description: 'test' },
     method: 'POST'
   }]);
 

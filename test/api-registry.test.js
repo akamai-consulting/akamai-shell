@@ -130,17 +130,6 @@ test('normalizes a fetched Cloudlets Request Control version for PUT', () => {
   });
 });
 
-test('normalizes Cloudlets policy version POST arguments', () => {
-  const cloudlets = apiRegistry.moduleFor('/cloudlets/v3/policies/371861/versions');
-  assert.deepEqual(cloudlets.postPolicyVersionBody(
-    { policyId: 371861, matchRules: [] },
-    { description: 'test' }
-  ), {
-    matchRules: [],
-    description: 'test'
-  });
-});
-
 test('discovers and routes JWT API by service prefix', () => {
   const jwtApi = apiRegistry.moduleFor('/jwt-api/v1/key-collections');
   assert.equal(jwtApi.name, 'JwtApi');

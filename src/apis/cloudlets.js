@@ -40,24 +40,12 @@ function putPolicyVersionBody(body) {
   return normalized;
 }
 
-function postPolicyVersionBody(body, query) {
-  const normalized = { ...(body && typeof body === 'object' ? body : {}) };
-  delete normalized.policyId;
-  if (normalized.description === undefined && query.description !== undefined) {
-    normalized.description = query.description;
-  }
-  return normalized;
-}
-
 async function requestMethod(settings, apiPath, method, query, body) {
   const normalizedMethod = method.toUpperCase();
   const normalizedQuery = { ...(query || {}) };
   let normalizedBody = body;
   if (normalizedMethod === 'PUT' && /^\/policies\/[^/]+\/versions\/[^/]+$/.test(apiPath)) {
     normalizedBody = putPolicyVersionBody(body);
-  } else if (normalizedMethod === 'POST' && /^\/policies\/[^/]+\/versions$/.test(apiPath)) {
-    normalizedBody = postPolicyVersionBody(body, normalizedQuery);
-    delete normalizedQuery.description;
   }
   return transport.requestMethod(settings, apiPath, method, normalizedQuery, normalizedBody,
     undefined, PREFIX);
@@ -80,6 +68,5 @@ const Cloudlets = createApiModule({
 });
 
 Cloudlets.putPolicyVersionBody = putPolicyVersionBody;
-Cloudlets.postPolicyVersionBody = postPolicyVersionBody;
 
 module.exports = Cloudlets;
