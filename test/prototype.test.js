@@ -225,6 +225,8 @@ test('supports the question-mark help alias and JavaScript fallback', async () =
   await repl.execute('foo = []');
   await repl.execute('[1,2,3].forEach(v => foo.push(v))');
   assert.equal(JSON.stringify(repl.variables.foo), '[1,2,3]');
+  await repl.execute('console.log(123)');
+  assert.equal(output.read().toString(), '123\n');
 
   repl.rl.close();
   input.destroy();

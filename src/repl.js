@@ -465,6 +465,20 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   settings.contractId = settings.parameterDefaults.contractId || '';
   settings.groupId = settings.parameterDefaults.groupId || '';
   const variables = { ...environment.variables };
+  const writeConsole = (...values) => {
+    output.write(`${values.map((value) => typeof value === 'string'
+      ? value
+      : serializeVariable(value)).join(' ')}\n`);
+  };
+  Object.defineProperty(variables, 'console', {
+    value: {
+      log: writeConsole,
+      info: writeConsole,
+      warn: writeConsole,
+      error: writeConsole
+    },
+    enumerable: false
+  });
   const cache = new Map();
   let rl;
   const recorder = createRecorder();
