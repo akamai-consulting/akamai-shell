@@ -703,7 +703,9 @@ test('defines, expands, lists, and unsets custom variables', async () => {
       await repl.execute('show foo["items"]');
       assert.equal(output.read().toString(), '[\n  1,\n  2,\n  3\n]\n');
       await repl.execute('show');
-      assert.match(output.read().toString(), /"edgerc"/);
+      const allVariables = output.read().toString();
+      assert.match(allVariables, /"config"/);
+      assert.match(allVariables, /"foo"/);
 
       repl.rl.close();
       input.destroy();

@@ -114,7 +114,7 @@ const HELP = `Commands:
   echo <text>                    Print text with variable expansion
   ! <shell command>              Run a local shell command
   history                        Show command history
-  show                           Show non-secret settings
+  show [<expression>]             Show config, variables, or a selected value
   help                           Show this help
   ?                              Alias for help
   record auto|on|off             Capture HTTP requests as JSONL
@@ -681,7 +681,11 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command === 'show') {
-      const expression = commandLine.slice(command.length).trim() || 'config';
+      const expression = commandLine.slice(command.length).trim();
+      if (!expression) {
+        output.write(`${JSON.stringify(variables, null, 2)}\n`);
+        return true;
+      }
       let value;
       try {
         value = vm.runInNewContext(expression, variables);
