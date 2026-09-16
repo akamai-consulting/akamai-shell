@@ -126,6 +126,34 @@ test('evaluates JavaScript variables and passes JSON bodies with -v', async () =
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('calls Akamai get commands through the JavaScript $ function', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-command-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query) => {
+    requests.push({ requestPath, query });
+    return { body: { version: 1, description: 'test' } };
+  }, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('foo = await $("get /cloudlets/api/v2/policies/371982/versions/1")');
+  assert.deepEqual(JSON.parse(JSON.stringify(repl.variables.foo)), {
+    version: 1,
+    description: 'test'
+  });
+  assert.deepEqual(requests, [{
+    requestPath: '/policies/371982/versions/1',
+    query: {}
+  }]);
+  assert.equal(output.read(), null);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('adds a separator only after a complete completion candidate', () => {
   assert.deepEqual(addCompletionSeparator([['/properties'], '/prop']), [
     ['/properties '], '/prop'

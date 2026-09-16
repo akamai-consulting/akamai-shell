@@ -253,8 +253,11 @@ function parseWriteArguments(tokens, method = 'POST') {
   return { ...request, body };
 }
 
-function evaluateJavaScript(expression, variables, requireValue = true) {
-  const value = vm.runInNewContext(expression, variables);
+async function evaluateJavaScript(expression, variables, requireValue = true, expressionMode = false) {
+  const source = expressionMode
+    ? `(async () => (${expression}))()`
+    : `(async () => { ${expression}\n})()`;
+  const value = await vm.runInNewContext(source, variables);
   if (value === undefined && !requireValue) return value;
   if (value === undefined) throw new Error('JavaScript expression must produce a JSON value');
   try {
@@ -479,6 +482,19 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     },
     enumerable: false
   });
+  Object.defineProperty(variables, '$', {
+    value: async (command) => {
+      const tokens = tokenize(command);
+      const method = tokens.shift()?.toLowerCase();
+      if (method !== 'get') {
+        throw new Error('JavaScript $() currently supports only the get command');
+      }
+      const request = parseGetArguments(tokens);
+      const response = await apiRegistry.get(settings, request.path, request.query, requestGet);
+      return response.body;
+    },
+    enumerable: false
+  });
   const cache = new Map();
   let rl;
   const recorder = createRecorder();
@@ -522,7 +538,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (isJavaScriptStatement(line)) {
-      evaluateJavaScript(line, variables);
+      await evaluateJavaScript(line, variables, false);
       return true;
     }
     const expandedLine = expandVariables(line, variables);
@@ -675,7 +691,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command !== 'get' && command !== 'post' && command !== 'put') {
-      evaluateJavaScript(commandLine, variables, false);
+      await evaluateJavaScript(commandLine, variables, false);
       return true;
     }
 
@@ -704,7 +720,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       if (fileOption.filePath !== undefined) {
         throw new Error('The -v option cannot be combined with -f');
       }
-      request.body = evaluateJavaScript(valueOption.expression, variables);
+      request.body = await evaluateJavaScript(valueOption.expression, variables, true, true);
     }
     const response = command === 'get'
       ? await apiRegistry.get(settings, request.path, request.query, requestGet)
