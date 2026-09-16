@@ -84,6 +84,21 @@ test('completes HTTPie-style query parameter names', () => {
   assert(QUERY_PARAMETER_CANDIDATES.includes('groupId=='));
 });
 
+test('supports string body fields with key=value for PUT', () => {
+  assert.deepEqual(parseWriteArguments([
+    '/cloudlets/v3/policies/371861/versions/1',
+    'description=test',
+    'matchRules:=[]'
+  ], 'PUT'), {
+    path: '/cloudlets/v3/policies/371861/versions/1',
+    query: {},
+    body: {
+      description: 'test',
+      matchRules: []
+    }
+  });
+});
+
 test('adds a separator only after a complete completion candidate', () => {
   assert.deepEqual(addCompletionSeparator([['/properties'], '/prop']), [
     ['/properties '], '/prop'
