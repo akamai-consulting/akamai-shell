@@ -25,6 +25,19 @@ methods and paths vary by module; unsupported combinations fail explicitly.
 Requirements: Node.js and an EdgeGrid resource file, normally
 `~/.edgerc`.
 
+Clone the repository with its checked-in API reference submodule:
+
+```bash
+git clone --recurse-submodules https://github.com/tai/akamai-shell.git
+cd akamai-shell
+```
+
+For an existing checkout, initialize or update the submodules with:
+
+```bash
+git submodule update --init --recursive
+```
+
 ```bash
 npm install
 npm start
