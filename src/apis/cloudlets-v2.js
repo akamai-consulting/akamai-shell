@@ -43,7 +43,8 @@ const CloudletsV2 = createApiModule({
   staticPaths: CATALOG.staticPaths,
   methodPaths: {
     GET: CATALOG.methodPaths.GET || [],
-    POST: CATALOG.methodPaths.POST || []
+    POST: CATALOG.methodPaths.POST || [],
+    PUT: CATALOG.methodPaths.PUT || []
   },
   methodStaticPaths: Object.fromEntries(Object.entries(CATALOG.methodStaticPaths)
     .filter(([method]) => method !== 'GET')),
