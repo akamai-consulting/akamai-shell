@@ -92,6 +92,7 @@ function addCompletionSeparator([candidates, partial], variables) {
       candidate.endsWith(':=') || /\s$/.test(candidate)) {
     return [candidates, partial];
   }
+  if (candidate.startsWith('$')) return [candidates, partial];
   if (variables) {
     try {
       const value = vm.runInNewContext(candidate, variables);
@@ -348,6 +349,46 @@ function completeVariableProperties(line, variables) {
     .filter((key) => key.startsWith(partial))
     .map((key) => `${candidatePrefix}${Array.isArray(value) ? key : JSON.stringify(key)}]`);
   return [sortCandidates(keys), line];
+}
+
+function completeVariableReference(line, variables) {
+  const marker = line.lastIndexOf('$');
+  if (marker < 0) return null;
+  const reference = line.slice(marker);
+  const match = reference.match(/^\$([A-Za-z_$][\w$]*(?:\[[^\]]*\])*(?:\[[^\]]*)?)$/);
+  if (!match) return null;
+  const expression = match[1];
+  const root = expression.match(/^[A-Za-z_$][\w$]*/)[0];
+  const partial = reference;
+  if (!Object.prototype.hasOwnProperty.call(variables, root)) {
+    if (expression.includes('[')) return [[], partial];
+    const candidates = Object.keys(variables)
+      .filter((name) => name.startsWith(expression))
+      .map((name) => `$${name}`);
+    return [sortCandidates(candidates), partial];
+  }
+  const bracket = expression.match(/^(.*)\[([^\]]*)$/);
+  const valueExpression = bracket ? bracket[1] : expression;
+  const value = valueExpression === root
+    ? variables[root]
+    : (() => {
+      try {
+        return vm.runInNewContext(valueExpression, variables);
+      } catch {
+        return undefined;
+      }
+    })();
+  if (value === undefined || value === null ||
+      (typeof value !== 'object' && typeof value !== 'function')) {
+    return [[], partial];
+  }
+  const base = bracket ? bracket[1] : expression;
+  const keyPartial = bracket ? bracket[2].replace(/^['"]/, '') : '';
+  const keys = Object.keys(value)
+    .filter((key) => !Array.isArray(value) || /^\d+$/.test(key))
+    .filter((key) => key.startsWith(keyPartial))
+    .map((key) => `$${base}[${Array.isArray(value) ? key : JSON.stringify(key)}]`);
+  return [sortCandidates(keys), partial];
 }
 
 function splitPipeline(line) {
@@ -788,6 +829,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   async function complete(line) {
+    const variableReference = completeVariableReference(line, variables);
+    if (variableReference) return variableReference;
     const variableCompletion = completeVariableProperties(line, variables);
     if (variableCompletion) return variableCompletion;
     if (/^\S*$/.test(line)) {

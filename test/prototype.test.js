@@ -277,6 +277,30 @@ test('completes JavaScript object keys and array indices', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('completes variable references throughout command lines', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-variable-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  await repl.execute('foo = {"activations":[{"id":1}],"status":"active"}');
+  assert.deepEqual(await repl.complete('echo $fo'), [['$foo'], '$fo']);
+  assert.deepEqual(await repl.complete('get /path/$fo'), [['$foo'], '$fo']);
+  assert.deepEqual(await repl.complete('echo $foo["act'), [
+    ['$foo["activations"]'],
+    '$foo["act'
+  ]);
+  assert.deepEqual(await repl.complete('echo $foo["activations"]['), [
+    ['$foo["activations"][0]'],
+    '$foo["activations"]['
+  ]);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('supports the question-mark help alias and JavaScript fallback', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
