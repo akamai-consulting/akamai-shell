@@ -681,7 +681,25 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command === 'show') {
-      output.write(`${JSON.stringify(settings, null, 2)}\n`);
+      const expression = commandLine.slice(command.length).trim() || 'config';
+      let value;
+      try {
+        value = vm.runInNewContext(expression, variables);
+      } catch (error) {
+        throw new Error(`Unable to evaluate show expression: ${error.message}`, { cause: error });
+      }
+      if (value === undefined) {
+        throw new Error(`Show expression "${expression}" is undefined`);
+      }
+      let rendered;
+      try {
+        rendered = JSON.stringify(value, null, 2);
+      } catch (error) {
+        throw new Error(`Show expression "${expression}" is not JSON-serializable: ${error.message}`, {
+          cause: error
+        });
+      }
+      output.write(`${rendered}\n`);
       return true;
     }
     if (command === 'echo') {

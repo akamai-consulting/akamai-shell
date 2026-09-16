@@ -689,7 +689,27 @@ test('defines, expands, lists, and unsets custom variables', async () => {
     repl.rl.close();
     input.destroy();
     output.destroy();
-    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(directory, { recursive: true, force: true     });
+
+    test('pretty prints config and selected variable values with show', async () => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-show-'));
+      const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+      output.read();
+      await repl.execute('foo = {"items":[1,2,3]}');
+      output.read();
+      await repl.execute('show foo["items"]');
+      assert.equal(output.read().toString(), '[\n  1,\n  2,\n  3\n]\n');
+      await repl.execute('show');
+      assert.match(output.read().toString(), /"edgerc"/);
+
+      repl.rl.close();
+      input.destroy();
+      output.destroy();
+      fs.rmSync(directory, { recursive: true, force: true });
+    });
   });
   const repl = createRepl(output, input, undefined, historyPath);
 
