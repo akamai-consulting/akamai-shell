@@ -166,8 +166,11 @@ function parameterHelp(method, apiPath, parameterName) {
       (relative === '/' || pathMatchesTemplate(relative, operation.path)));
     const parameters = operations.flatMap((operation) => operation.parameters || []);
     const unique = new Map(parameters.map((parameter) => [parameter.name, parameter]));
-    return [...unique.values()].filter((parameter) =>
+    const filtered = [...unique.values()].filter((parameter) =>
       !parameterName || parameter.name === parameterName);
+    return typeof apiModule.filterParameterHelp === 'function'
+      ? apiModule.filterParameterHelp(method, apiPath, filtered)
+      : filtered;
   });
 }
 

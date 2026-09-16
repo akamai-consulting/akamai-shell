@@ -134,12 +134,10 @@ test('provides Cloudlets v2 POST body help', () => {
     '/cloudlets/api/v2/policies/371982/versions'
   );
   assert.deepEqual(parameters.map(({ name }) => name), [
-    'policyId',
     'cloneVersion',
     'accountSwitchKey',
     'description',
-    'matchRules',
-    'matchRulesFormat'
+    'matchRules'
   ]);
 });
 

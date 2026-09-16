@@ -36,7 +36,7 @@ const DYNAMIC_COLLECTIONS = [
   }
 ];
 
-module.exports = createApiModule({
+const CloudletsV2 = createApiModule({
   name: 'CloudletsV2',
   prefix: PREFIX,
   queryParameters: CATALOG.queryParameters,
@@ -49,3 +49,14 @@ module.exports = createApiModule({
     .filter(([method]) => method !== 'GET')),
   dynamicCollections: DYNAMIC_COLLECTIONS
 });
+
+CloudletsV2.filterParameterHelp = (method, apiPath, parameters) => {
+  if (method.toUpperCase() !== 'POST' ||
+      !/^\/cloudlets\/api\/v2\/policies\/[^/]+\/versions$/.test(apiPath)) {
+    return parameters;
+  }
+  return parameters.filter((parameter) =>
+    parameter.in !== 'path' && parameter.name !== 'matchRulesFormat');
+};
+
+module.exports = CloudletsV2;
