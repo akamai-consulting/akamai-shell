@@ -347,8 +347,16 @@ function extractValueOption(tokens, method) {
     if (expression !== undefined || tokens[index + 1] === undefined) {
       throw new Error(`Usage: ${method.toLowerCase()} [-v <expression>] <api-path>`);
     }
-    expression = tokens[index + 1];
-    index += 1;
+    const pathIndex = tokens.findIndex((token, tokenIndex) =>
+      tokenIndex > index + 1 && token.startsWith('/'));
+    if (pathIndex >= 0) {
+      expression = tokens.slice(index + 1, pathIndex).join(' ');
+      remaining.push(...tokens.slice(pathIndex));
+      index = tokens.length;
+    } else {
+      expression = tokens.slice(index + 1).join(' ');
+      index = tokens.length;
+    }
   }
   return { remaining, expression };
 }
@@ -663,9 +671,10 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     accountSwitchKey: '',
     contractId: '',
     groupId: '',
-    logLevel: 'info',
-    logOutput: 'stderr',
-    recordMode: 'auto',
+    logLevel: LEVELS.includes(parameterDefaults.logLevel) ? parameterDefaults.logLevel : 'info',
+    logOutput: parameterDefaults.logOutput || 'stderr',
+    recordMode: ['auto', 'on', 'off'].includes(parameterDefaults.recordMode)
+      ? parameterDefaults.recordMode : 'auto',
     parameterDefaults,
     ...Object.fromEntries(Object.entries(parameterDefaults)
       .filter(([name]) => QUERY_PARAMETER_NAMES.has(name)))
@@ -692,6 +701,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       } else if (QUERY_PARAMETER_NAMES.has(property)) {
         target.parameterDefaults[property] = target[property];
       }
+      if (['logLevel', 'logOutput', 'recordMode'].includes(property)) {
+        target.parameterDefaults[property] = target[property];
+      }
       if (typeof persistParameters === 'function') persistParameters();
       return true;
     },
@@ -707,6 +719,12 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         return true;
       }
       if (QUERY_PARAMETER_NAMES.has(property)) delete target.parameterDefaults[property];
+      if (property === 'logLevel') target.logLevel = 'info';
+      if (property === 'logOutput') target.logOutput = 'stderr';
+      if (property === 'recordMode') target.recordMode = 'auto';
+      if (['logLevel', 'logOutput', 'recordMode'].includes(property)) {
+        delete target.parameterDefaults[property];
+      }
       return delete target[property];
     }
   });
@@ -715,6 +733,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     enumerable: false,
     writable: false
   });
+  settings.logger.setLevel(settingsTarget.logLevel);
+  settings.logger.setOutput(settingsTarget.logOutput);
   Object.defineProperty(settingsTarget, 'parameterDefaults', {
     value: parameterDefaults,
     enumerable: false,
@@ -746,9 +766,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   });
   Object.defineProperty(variables, '$', {
     value: async (command) => {
-      const expandedCommand = expandVariables(command, variables);
-      const [commandLine, pipeline] = splitPipeline(expandedCommand);
-      const tokens = tokenize(commandLine);
+      const [commandLine, pipeline] = splitPipeline(command);
+      const tokens = tokenize(commandLine).map((token) => expandVariables(token, variables));
       const method = tokens.shift()?.toLowerCase();
       if (method !== 'get') {
         throw new Error('JavaScript $() currently supports only the get command');
@@ -757,7 +776,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const response = await apiRegistry.get(settings, request.path, request.query, requestGet);
       if (pipeline !== null) {
         if (!pipeline) throw new Error('Pipeline command cannot be empty');
-        const output = await runShellCommandCapture(pipeline, `${bodyText(response.body)}\n`);
+        const output = await runShellCommandCapture(
+          expandVariables(pipeline, variables), `${bodyText(response.body)}\n`
+        );
         return parsePipelineOutput(output);
       }
       return response.body;
@@ -767,7 +788,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   const cache = new Map();
   let rl;
   const recorder = createRecorder();
-  recorder.setMode('auto');
+  recorder.setMode(settings.recordMode);
   Object.defineProperty(settings, 'recorder', {
     value: recorder,
     enumerable: false,
@@ -824,9 +845,17 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       await executeJavaScript(line);
       return true;
     }
-    const expandedLine = expandVariables(line, variables);
-    const [commandLine, pipeline] = splitPipeline(expandedLine);
-    const tokens = tokenize(commandLine);
+    const [commandLine, pipeline] = splitPipeline(line);
+    const initialTokens = tokenize(commandLine);
+    const initialCommand = initialTokens[0]?.toLowerCase();
+    const requestCommand = ['get', 'post', 'put'].includes(initialCommand);
+    const expandedCommandLine = requestCommand
+      ? commandLine
+      : expandVariables(commandLine, variables);
+    const tokens = tokenize(expandedCommandLine).map((token) =>
+      requestCommand ? expandVariables(token, variables) : token
+    );
+    const expandedPipeline = pipeline === null ? null : expandVariables(pipeline, variables);
     if (!tokens.length) return true;
     const command = tokens.shift().toLowerCase();
     settings.logger.debug('Command received', { command });
@@ -839,7 +868,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const expression = commandLine.slice(command.length).trim();
       if (!expression) {
         const rendered = `${JSON.stringify(variables, null, 2)}\n`;
-        if (pipeline !== null) await runShellCommand(pipeline, rendered, output);
+        if (expandedPipeline !== null) await runShellCommand(expandedPipeline, rendered, output);
         else output.write(rendered);
         return true;
       }
@@ -861,7 +890,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         });
       }
       const renderedOutput = `${rendered}\n`;
-      if (pipeline !== null) await runShellCommand(pipeline, renderedOutput, output);
+      if (expandedPipeline !== null) await runShellCommand(expandedPipeline, renderedOutput, output);
       else output.write(renderedOutput);
       return true;
     }
@@ -943,9 +972,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       fs.writeFileSync(fileOption.filePath, `${outputBody}\n`, { mode: 0o600 });
       return true;
     }
-    if (pipeline !== null) {
+    if (expandedPipeline !== null) {
       if (!pipeline) throw new Error('Pipeline command cannot be empty');
-      await runShellCommand(pipeline, `${outputBody}\n`, output);
+      await runShellCommand(expandedPipeline, `${outputBody}\n`, output);
     } else {
       output.write(`${outputBody}\n`);
     }
