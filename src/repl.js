@@ -543,7 +543,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     groupId: '',
     logLevel: 'info',
     logOutput: 'stderr',
-    recordMode: 'off',
+    recordMode: 'auto',
     parameterDefaults
   };
   const settings = new Proxy(settingsTarget, {
@@ -632,6 +632,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   const cache = new Map();
   let rl;
   const recorder = createRecorder();
+  recorder.setMode('auto');
   Object.defineProperty(settings, 'recorder', {
     value: recorder,
     enumerable: false,
