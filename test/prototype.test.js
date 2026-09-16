@@ -110,13 +110,21 @@ test('evaluates JavaScript variables and passes JSON bodies with -v', async () =
   await repl.execute('foo = {"aaa":[1,2,3]}');
   await repl.execute('foo["bbb"] = 1234');
   await repl.execute('delete foo["aaa"]');
+  await repl.execute('foo["message"] = "hello world"');
   await repl.execute('post -v foo /edge-diagnostics/v1/curl');
+  await repl.execute('put -v "$foo" /papi/v1/properties/prp_526230/versions/79/rules');
 
   assert.deepEqual(requests[0], {
     requestPath: '/curl',
     query: {},
-    body: { bbb: 1234 },
+    body: { bbb: 1234, message: 'hello world' },
     method: 'POST'
+  });
+  assert.deepEqual(requests[1], {
+    requestPath: '/properties/prp_526230/versions/79/rules',
+    query: {},
+    body: { bbb: 1234, message: 'hello world' },
+    method: 'PUT'
   });
   repl.rl.close();
   input.destroy();
@@ -952,6 +960,8 @@ test('persists configuration and variables automatically', async () => {
 
   await repl.execute('config.edgerc = "/tmp/custom-edgerc"');
   await repl.execute('config.contractId = "ctr_command"');
+  await repl.execute('config.logLevel = "debug"');
+  await repl.execute('config.recordMode = "off"');
   await repl.execute('foo = "saved-value"');
   await repl.execute('config.edgercSection = "papi"');
 
@@ -965,6 +975,9 @@ test('persists configuration and variables automatically', async () => {
   assert.equal(next.settings.contractId, 'ctr_command');
   assert.equal(next.settings.edgerc, '/tmp/custom-edgerc');
   assert.equal(next.settings.edgercSection, 'papi');
+  assert.equal(next.settings.logLevel, 'debug');
+  assert.equal(next.settings.recordMode, 'off');
+  assert.equal(next.settings.recorder.mode, 'off');
   assert.equal(next.variables.foo, 'saved-value');
   next.rl.close();
   nextInput.destroy();
