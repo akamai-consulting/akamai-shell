@@ -335,6 +335,22 @@ test('supports the question-mark help alias and JavaScript fallback', async () =
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('executes multiple JavaScript statements on one line', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-statements-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('console.log(1); console.log(2);');
+  assert.equal(output.read().toString(), '1\n2\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('completes the file option for API commands', async () => {
   const input = new PassThrough();
   const output = new PassThrough();

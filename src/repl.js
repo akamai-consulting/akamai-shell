@@ -278,7 +278,8 @@ function isJavaScriptStatement(line) {
 }
 
 function isJavaScriptExpression(line) {
-  return !/^\s*(?:for|while|if|switch|try|function|class|const|let|var)\b/.test(line);
+  return !line.includes(';') &&
+    !/^\s*(?:for|while|if|switch|try|function|class|const|let|var)\b/.test(line);
 }
 
 function extractValueOption(tokens, method) {
