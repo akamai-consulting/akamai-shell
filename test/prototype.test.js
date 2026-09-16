@@ -21,7 +21,6 @@ const {
   saveHistory,
   loadParameterDefaults,
   saveParameterDefaults,
-  settingCandidates,
   contextCandidates,
   formatParameterHelp,
   addCompletionSeparator
@@ -35,16 +34,15 @@ test('parses a PAPI path and query parameters', () => {
     query: { limit: '2', accountSwitchKey: 'a:b' }
   });
 
-  test('sets and completes the session log level with info fallback', async () => {
+  test('updates the session log level through config', async () => {
     const output = new PassThrough();
     const input = new PassThrough();
     const repl = createRepl(output, input, undefined, path.join(os.tmpdir(), `history-${Date.now()}`));
 
-    await repl.execute('set log-level debug');
+    await repl.execute('config.logLevel = "debug"');
     assert.equal(repl.settings.logLevel, 'debug');
-    await repl.execute('set log-level invalid');
+    await repl.execute('config.logLevel = "invalid"');
     assert.equal(repl.settings.logLevel, 'info');
-    assert.deepEqual(await repl.complete('set log-level '), [['debug', 'info', 'warn', 'error'], '']);
   });
 });
 
@@ -530,7 +528,9 @@ test('keeps quoted JSON arrays typed for Cloudlets v2 POST bodies', async () => 
 });
 
 test('tokenizes quoted shell values', () => {
-  assert.deepEqual(tokenize('set edgerc "~/.edgerc"'), ['set', 'edgerc', '~/.edgerc']);
+  assert.deepEqual(tokenize('config.edgerc = "~/.edgerc"'), [
+    'config.edgerc', '=', '~/.edgerc'
+  ]);
 });
 
 test('completes dynamic edge hostname identifiers', () => {
@@ -587,21 +587,6 @@ test('resolves nested paths after a dynamic property ID', () => {
       '/properties/prp_615111/versions'
     ]
   );
-});
-
-test('provides set command setting candidates', () => {
-  assert.deepEqual(settingCandidates(''), [
-    'account-switch-key',
-    'contract-id',
-    'edgerc',
-    'edgerc-section',
-    'group-id',
-    'log-level',
-    'log-output'
-  ]);
-  assert.deepEqual(settingCandidates('edgerc-'), ['edgerc-section']);
-  assert.deepEqual(settingCandidates('account'), ['account-switch-key']);
-  assert.deepEqual(settingCandidates('contract'), ['contract-id']);
 });
 
 test('completes contract and group IDs from collection responses', () => {
@@ -708,13 +693,13 @@ test('defines, expands, lists, and unsets custom variables', async () => {
   });
   const repl = createRepl(output, input, undefined, historyPath);
 
-  await repl.execute('set foo bar baz');
+  await repl.execute('foo = "bar baz"');
   await repl.execute('echo $foo');
   assert.match(printed, /"bar baz"\n/);
   printed = '';
-  await repl.execute('set');
-  assert.match(printed, /"foo": "bar baz"/);
-  await repl.execute('unset foo');
+  await repl.execute('foo');
+  assert.equal(printed, '"bar baz"\n');
+  await repl.execute('delete foo');
   printed = '';
   await repl.execute('echo $foo');
   assert.equal(printed, '\n');
@@ -770,14 +755,14 @@ test('saves and loads parameter defaults through commands', async () => {
   const envPath = path.join(directory, 'saved-env');
   const repl = createRepl(output, input, undefined, historyPath);
 
-  await repl.execute('set edgerc /tmp/custom-edgerc');
-  await repl.execute('set contractId ctr_command');
-  await repl.execute('set foo saved-value');
-  await repl.execute('set edgerc-section papi');
+  await repl.execute('config.edgerc = "/tmp/custom-edgerc"');
+  await repl.execute('config.contractId = "ctr_command"');
+  await repl.execute('foo = "saved-value"');
+  await repl.execute('config.edgercSection = "papi"');
   await repl.execute(`save -f ${envPath}`);
-  await repl.execute('set contractId ctr_changed');
-  await repl.execute('set edgerc-section changed');
-  await repl.execute('unset foo');
+  await repl.execute('config.contractId = "ctr_changed"');
+  await repl.execute('config.edgercSection = "changed"');
+  await repl.execute('delete foo');
   await repl.execute(`load -f ${envPath}`);
   assert.equal(repl.settings.contractId, 'ctr_command');
   assert.equal(repl.settings.edgerc, '/tmp/custom-edgerc');
@@ -799,8 +784,8 @@ test('loads the saved EdgeGrid section when starting a new shell', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const first = createRepl(output, input, undefined, historyPath);
-  await first.execute('set foo startup-value');
-  await first.execute('set edgerc-section papi');
+  await first.execute('foo = "startup-value"');
+  await first.execute('config.edgercSection = "papi"');
   first.rl.close();
   input.destroy();
   output.destroy();
@@ -822,12 +807,15 @@ test('unset -a clears all API parameter defaults', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-unset-all-'));
   const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
 
-  await repl.execute('set contractId ctr_command');
-  await repl.execute('set groupId grp_command');
-  await repl.execute('set limit 10');
-  await repl.execute('set foo bar');
+  await repl.execute('config.contractId = "ctr_command"');
+  await repl.execute('config.groupId = "grp_command"');
+  await repl.execute('config.limit = "10"');
+  await repl.execute('foo = "bar"');
   const savedDefaults = fs.readFileSync(path.join(directory, 'env'), 'utf8');
-  await repl.execute('unset -a');
+  await repl.execute('delete config.contractId');
+  await repl.execute('delete config.groupId');
+  await repl.execute('delete config.limit');
+  await repl.execute('delete foo');
 
   assert.equal(repl.settings.contractId, '');
   assert.equal(repl.settings.groupId, '');

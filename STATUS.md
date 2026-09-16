@@ -46,7 +46,7 @@ and mutation confirmation flows remain unsupported.
 
 ### Interactive shell
 
-Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
+Supported commands include `get`, `post`, `put`, `save`, `load`,
 `show`, `history`, `echo`, `help`, `exit`, and `quit`.
 
 - Shell variables support `$name`, property, and index expansion (for example

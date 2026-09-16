@@ -6,21 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const vm = require('vm');
-const { get: papiGet } = require('./papi-client');
 const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
 const { createLogger, LEVELS } = require('./logger');
 const { createRecorder } = require('./recorder');
 
-const SETTING_NAMES = [
-  'edgerc',
-  'edgerc-section',
-  'account-switch-key',
-  'contract-id',
-  'group-id',
-  'log-level',
-  'log-output'
-];
 const HISTORY_SIZE = 1000;
 const HISTORY_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'history');
 const ENV_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'env');
@@ -28,16 +18,13 @@ const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
 const CONFIG_NAMES = [
   'edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId',
-  'logLevel', 'logOutput', 'recordMode', 'parameterDefaults'
+  'logLevel', 'logOutput', 'recordMode', 'parameterDefaults',
+  ...QUERY_PARAMETER_NAMES
 ];
 const COMMANDS = [
-  'get', 'post', 'put', 'set', 'unset', 'save', 'load', 'show', 'history',
+  'get', 'post', 'put', 'save', 'load', 'show', 'history',
   'echo', 'record', 'help', '?', 'exit', 'quit'
 ];
-
-function settingCandidates(token = '') {
-  return sortCandidates(SETTING_NAMES.filter((name) => name.startsWith(token)));
-}
 
 function parameterType(parameter) {
   const schema = parameter.schema || {};
@@ -122,17 +109,6 @@ const HELP = `Commands:
   get [-f <path>] <api-path>   Write the GET response to a file
       name=value                 String JSON field
       name:=value                JSON-typed field (number, boolean, object, array, or null)
-  set edgerc <path>             Set the EdgeGrid resource file
-  set edgerc-section <name>     Set the EdgeGrid credential section
-  set account-switch-key <key>  Set the target account switch key
-  set contract-id <id>          Set the default contract ID
-  set group-id <id>             Set the default group ID
-  set log-level <level>       Set session logging (debug, info, warn, error)
-  set log-output <destination> Set logging destination (stderr, stdout, or file)
-  set <name> <value>            Set a custom shell variable
-  set                            Show settings and custom variables
-  unset <name>                   Clear a setting or variable
-  unset -a                       Clear all API parameter defaults
   save [-f <path>]               Save parameter defaults
   load [-f <path>]               Load parameter defaults
   echo <text>                    Print text with variable expansion
@@ -544,7 +520,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     logLevel: 'info',
     logOutput: 'stderr',
     recordMode: 'auto',
-    parameterDefaults
+    parameterDefaults,
+    ...Object.fromEntries(Object.entries(parameterDefaults)
+      .filter(([name]) => QUERY_PARAMETER_NAMES.has(name)))
   };
   const settings = new Proxy(settingsTarget, {
     set(target, property, value) {
@@ -565,7 +543,10 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         .includes(property)) {
         const parameterName = property === 'edgercSection' ? 'edgercSection' : property;
         target.parameterDefaults[parameterName] = target[property];
+      } else if (QUERY_PARAMETER_NAMES.has(property)) {
+        target.parameterDefaults[property] = target[property];
       }
+      if (typeof persistParameters === 'function') persistParameters();
       return true;
     },
     deleteProperty(target, property) {
@@ -579,6 +560,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         delete target.parameterDefaults[property];
         return true;
       }
+      if (QUERY_PARAMETER_NAMES.has(property)) delete target.parameterDefaults[property];
       return delete target[property];
     }
   });
@@ -656,12 +638,15 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   function applyParameterDefaults(defaults) {
+    for (const name of QUERY_PARAMETER_NAMES) delete settingsTarget[name];
     settingsTarget.parameterDefaults = defaults;
     settingsTarget.edgerc = defaults.edgerc || `${os.homedir()}/.edgerc`;
     settingsTarget.edgercSection = defaults.edgercSection || 'default';
     settingsTarget.accountSwitchKey = defaults.accountSwitchKey || '';
     settingsTarget.contractId = defaults.contractId || '';
     settingsTarget.groupId = defaults.groupId || '';
+    Object.assign(settingsTarget, Object.fromEntries(Object.entries(defaults)
+      .filter(([name]) => QUERY_PARAMETER_NAMES.has(name))));
   }
 
   async function execute(line) {
@@ -742,97 +727,6 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       }
       return true;
     }
-    if (command === 'unset') {
-      if (tokens.length === 1 && tokens[0] === '-a') {
-        applyParameterDefaults({});
-        cache.clear();
-        return true;
-      }
-      if (tokens.length !== 1) {
-        throw new Error(`Usage: unset ${SETTING_NAMES.join('|')}|<variable>`);
-      }
-      const setting = tokens[0];
-      if (setting === 'log-level') {
-        settings.logLevel = 'info';
-        settings.logger.setLevel('info');
-        cache.clear();
-        return true;
-      }
-      if (setting === 'log-output') {
-        settings.logOutput = 'stderr';
-        settings.logger.setOutput('stderr');
-        cache.clear();
-        return true;
-      }
-      if (SETTING_NAMES.includes(setting)) {
-        const key = setting === 'edgerc-section' ? 'edgercSection'
-          : setting === 'account-switch-key' ? 'accountSwitchKey'
-            : setting === 'contract-id' ? 'contractId'
-              : setting === 'group-id' ? 'groupId' : 'edgerc';
-        settings[key] = ['accountSwitchKey', 'contractId', 'groupId'].includes(key) ? '' : undefined;
-        delete settings.parameterDefaults[key];
-      } else {
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(setting)) throw new Error('Invalid variable name');
-        delete variables[setting];
-      }
-      cache.clear();
-      return true;
-    }
-    if (command === 'set') {
-      if (!tokens.length) {
-        output.write(`${JSON.stringify({ ...settings, ...variables }, null, 2)}\n`);
-        return true;
-      }
-      if (tokens.length < 2) {
-        throw new Error(`Usage: set ${SETTING_NAMES.join('|')} <value> or set <variable> <value>`);
-      }
-      const name = tokens[0];
-      const value = tokens.slice(1).join(' ');
-      if (name === 'log-level') {
-        settings.logLevel = LEVELS.includes(value) ? value : 'info';
-        settings.logger.setLevel(settings.logLevel);
-        settings.logger.info('Log level changed', { level: settings.logLevel });
-        return true;
-      }
-      if (name === 'log-output') {
-        const destination = value === 'stderr' || value === 'stdout' ? value : expandHome(value);
-        settings.logger.setOutput(destination);
-        settings.logOutput = destination;
-        settings.logger.info('Log output changed', { destination });
-        return true;
-      }
-      if (SETTING_NAMES.includes(name)) {
-        const key = name === 'edgerc-section' ? 'edgercSection'
-          : name === 'account-switch-key' ? 'accountSwitchKey'
-            : name === 'contract-id' ? 'contractId'
-              : name === 'group-id' ? 'groupId' : 'edgerc';
-        settings[key] = key === 'edgerc' ? expandHome(value) : value;
-      } else if (QUERY_PARAMETER_NAMES.has(name)) {
-        settings.parameterDefaults[name] = value;
-        if (name === 'accountSwitchKey') settings.accountSwitchKey = value;
-        if (name === 'contractId') settings.contractId = value;
-        if (name === 'groupId') settings.groupId = value;
-      } else {
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error('Invalid variable name');
-        variables[name] = value;
-      }
-      if (SETTING_NAMES.includes(name) && ['edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId'].includes(
-        name === 'edgerc' ? 'edgerc'
-          : name === 'account-switch-key' ? 'accountSwitchKey'
-          : name === 'contract-id' ? 'contractId'
-            : name === 'group-id' ? 'groupId'
-              : name === 'edgerc-section' ? 'edgercSection' : ''
-      )) {
-        const parameterName = name === 'edgerc' ? 'edgerc'
-          : name === 'account-switch-key' ? 'accountSwitchKey'
-          : name === 'contract-id' ? 'contractId'
-            : name === 'group-id' ? 'groupId' : 'edgercSection';
-        settings.parameterDefaults[parameterName] = value;
-      }
-      persistParameters();
-      cache.clear();
-      return true;
-    }
     if (command !== 'get' && command !== 'post' && command !== 'put') {
       await executeJavaScript(commandLine);
       return true;
@@ -906,30 +800,6 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const partial = recordMatch[1];
       return [sortCandidates(['auto', 'off', 'on', 'show'].filter((value) =>
         value.startsWith(partial))), partial];
-    }
-    const logLevelMatch = line.match(/^set\s+log-level\s+(\S*)$/);
-    if (logLevelMatch) {
-      const partial = logLevelMatch[1];
-      return [LEVELS.filter((level) => level.startsWith(partial)), partial];
-    }
-    const logOutputMatch = line.match(/^set\s+log-output\s+(\S*)$/);
-    if (logOutputMatch) {
-      const partial = logOutputMatch[1];
-      return [['stderr', 'stdout'].filter((destination) => destination.startsWith(partial)), partial];
-    }
-    if (/^set\s*$/.test(line)) {
-      return [sortCandidates(SETTING_NAMES), ''];
-    }
-    const contextMatch = line.match(/^set\s+(contract-id|group-id)\s+(\S*)$/);
-    if (contextMatch) {
-      const setting = contextMatch[1];
-      const partial = contextMatch[2];
-      return apiRegistry.completeSetting(setting, partial, settings, cache, requestGet || papiGet);
-    }
-    const setMatch = line.match(/^set\s+(\S*)$/);
-    if (setMatch) {
-      const token = setMatch[1];
-      return [settingCandidates(token), token];
     }
     const optionMatch = line.match(/^(get|post|put)\s+(-\S*)$/);
     if (optionMatch) {
@@ -1121,8 +991,6 @@ module.exports = {
   saveHistory,
   loadParameterDefaults,
   saveParameterDefaults,
-  SETTING_NAMES,
-  settingCandidates,
   formatParameterHelp,
   addCompletionSeparator,
   contextCandidates: apiRegistry.API_MODULES.find((apiModule) =>
