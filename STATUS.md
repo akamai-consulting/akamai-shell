@@ -38,8 +38,9 @@ and mutation confirmation flows remain unsupported.
 - Configurable `.edgerc` path and credential section.
 - Generic response parsing and HTTP/API error reporting.
 - Target `accountSwitchKey` propagation across API modules.
-- PAPI target context (`accountSwitchKey`, `contractId`, and `groupId`) defaults
-  and validation, grouped under the persisted `config.target` object.
+- Shared API request target context (`accountSwitchKey`, `contractId`, and
+  `groupId`) defaults and validation, grouped under the persisted
+  `config.target` object.
 - HTTPie-style inline query parameters, with inline values overriding
   configured defaults.
 
@@ -53,10 +54,10 @@ Supported commands include `get`, `post`, `put`, `find`, `show`, `history`,
   expansion, so quoted JSON values remain intact in commands such as
   `put -v "$foo" /papi/v1/...`.
 - Runtime configuration is available as the reserved `config` object from
-  JavaScript and command interpolation. The complete PAPI target context is
-  grouped under `config.target`. Legacy flat aliases remain available for
-  compatibility. User-defined variables remain top-level and are not merged
-  into `config`.
+  JavaScript and command interpolation. The complete API request target
+  context is grouped under `config.target`. Legacy flat aliases remain
+  available for compatibility. User-defined variables remain top-level and are
+  not merged into `config`.
 - Lines that are not recognized as shell commands are evaluated as JavaScript,
   allowing snippets such as `[1,2,3].forEach(v => console.log(v))`; shell
   commands retain precedence. JavaScript `console.log`, `info`, `warn`, and

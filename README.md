@@ -69,13 +69,14 @@ akamai> config.edgerc = "~/.edgerc"
 akamai> config.edgercSection = "papi"
 ```
 
-Set the complete active PAPI target context as one value:
+Set the active API request target as one value. Use the identifiers from your
+own account:
 
 ```javascript
 config.target = {
-  accountSwitchKey: "B-C-1ED34DK",
-  contractId: "ctr_123",
-  groupId: "grp_456"
+  accountSwitchKey: "your-account-switch-key",
+  contractId: "your-contract-id",
+  groupId: "your-group-id"
 }
 ```
 
@@ -133,9 +134,9 @@ later requests:
 
 ```javascript
 config.target = {
-  accountSwitchKey: "B-C-1ED34DK",
-  contractId: "ctr_123",
-  groupId: "grp_456"
+  accountSwitchKey: "your-account-switch-key",
+  contractId: "your-contract-id",
+  groupId: "your-group-id"
 }
 
 groups = await $("get /papi/v1/groups")
@@ -173,11 +174,11 @@ JavaScript values can be used as complete POST or PUT bodies. Quoting a
 variable keeps a JSON value containing spaces or quotes together:
 
 ```javascript
-rules = await $("get /papi/v1/properties/prp_526230/versions/79/rules")
+rules = await $("get /papi/v1/properties/prp_example/versions/1/rules")
 ```
 
 ```text
-put -v "$rules" /papi/v1/properties/prp_526230/versions/79/rules
+put -v "$rules" /papi/v1/properties/prp_example/versions/1/rules
 ```
 
 The shell also supports property and index expansion in command arguments:
@@ -203,30 +204,30 @@ akamai> groups.groups.items.filter(g => g.groupName.includes("production"))
 [
   {
     "groupName": "production",
-    "groupId": "grp_123",
-    "parentGroupId": "grp_1",
-    "contractIds": ["ctr_123"]
+    "groupId": "grp_example",
+    "parentGroupId": "grp_parent",
+    "contractIds": ["ctr_example"]
   }
 ]
-akamai> get /papi/v1/properties groupId==grp_123
+akamai> get /papi/v1/properties groupId==grp_example
 {
   "properties": {
     "items": [
       {
-        "propertyId": "prp_456",
+        "propertyId": "prp_example",
         "propertyName": "www.example.com",
         "latestVersion": 12
       }
     ]
   }
 }
-akamai> properties = await $("get /papi/v1/properties groupId==grp_123")
+akamai> properties = await $("get /papi/v1/properties groupId==grp_example")
 akamai> find /papi/v1/properties -q 'propertyName=~example'
 [
   {
-    "path": "/papi/v1/properties/prp_456",
+    "path": "/papi/v1/properties/prp_example",
     "resource": {
-      "propertyId": "prp_456",
+      "propertyId": "prp_example",
       "propertyName": "www.example.com",
       "latestVersion": 12
     }
