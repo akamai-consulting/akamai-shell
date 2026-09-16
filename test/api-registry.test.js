@@ -108,6 +108,26 @@ test('routes Cloudlets v3 policy version PUT requests', async () => {
   });
 });
 
+test('routes Cloudlets v2 policy version POST requests', async () => {
+  const body = { description: 'test', matchRules: [] };
+  const response = await apiRegistry.post(
+    {},
+    '/cloudlets/api/v2/policies/371982/versions',
+    {},
+    body,
+    async (settings, path, query, requestBody, method) => ({
+      settings, path, query, body: requestBody, method
+    })
+  );
+  assert.deepEqual(response, {
+    settings: {},
+    path: '/policies/371982/versions',
+    query: {},
+    body,
+    method: 'POST'
+  });
+});
+
 test('normalizes a fetched Cloudlets Request Control version for PUT', () => {
   const cloudlets = apiRegistry.moduleFor('/cloudlets/v3/policies/371861/versions/1');
   assert.deepEqual(cloudlets.putPolicyVersionBody({

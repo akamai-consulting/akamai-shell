@@ -24,6 +24,7 @@ document. Edge Diagnostics v1 supports its OpenAPI-derived POST operations.
 Cloudlets v3 supports its OpenAPI-derived PUT policy and policy-version
 operations, including normalization of fetched policy-version responses into
 PUT-compatible bodies, and POST policy-version creation.
+Cloudlets v2 supports its OpenAPI-derived POST policy-version operations.
 Property Manager supports creating property versions with POST and its
 OpenAPI-derived PUT rule-tree operations. POST, PUT parsing, routing, and
 transport are implemented generically. Unsupported method/path combinations
