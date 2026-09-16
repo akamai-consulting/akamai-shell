@@ -7,13 +7,18 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { get: papiGet } = require('./papi-client');
 const apiRegistry = require('./api-registry');
+const { sortCandidates } = require('./path-completion');
+const { createLogger, LEVELS } = require('./logger');
+const { createRecorder } = require('./recorder');
 
 const SETTING_NAMES = [
   'edgerc',
   'edgerc-section',
   'account-switch-key',
   'contract-id',
-  'group-id'
+  'group-id',
+  'log-level',
+  'log-output'
 ];
 const HISTORY_SIZE = 1000;
 const HISTORY_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'history');
@@ -22,11 +27,71 @@ const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
 const COMMANDS = [
   'get', 'post', 'put', 'set', 'unset', 'save', 'load', 'show', 'history',
-  'echo', 'help', 'exit', 'quit'
+  'echo', 'record', 'help', '?', 'exit', 'quit'
 ];
 
 function settingCandidates(token = '') {
-  return SETTING_NAMES.filter((name) => name.startsWith(token));
+  return sortCandidates(SETTING_NAMES.filter((name) => name.startsWith(token)));
+}
+
+function parameterType(parameter) {
+  const schema = parameter.schema || {};
+  if (Array.isArray(schema.enum)) return `enum (${schema.enum.join(', ')})`;
+  return schema.type || 'value';
+}
+
+function parameterDescription(parameter) {
+  return parameter.description || 'No description documented.';
+}
+
+function formatParameterHelp(method, apiPath, parameters, parameterName, assignment = '==') {
+  if (!parameters.length) return '';
+  if (parameterName) {
+    const parameter = parameters[0];
+    const required = parameter.required ? 'required' : 'optional';
+    const schema = parameter.schema || {};
+    const exampleValue = schema.example !== undefined
+      ? schema.example
+      : parameter.example !== undefined ? parameter.example : `<${schema.type || 'value'}>`;
+    const renderedExample = typeof exampleValue === 'string' && exampleValue.startsWith('{{')
+      ? `<${schema.type || 'value'}>`
+      : assignment === ':=' ? JSON.stringify(exampleValue) : String(exampleValue);
+    const details = [
+      `Parameter: ${parameter.name}`,
+      `Description: ${parameterDescription(parameter)}`,
+      `Type: ${parameterType(parameter)}`,
+      `Status: ${required}`
+    ];
+    if (schema.default !== undefined) details.push(`Default: ${JSON.stringify(schema.default)}`);
+    if (schema.example !== undefined) details.push(`Example value: ${JSON.stringify(schema.example)}`);
+    details.push(`Usage: ${method.toLowerCase()} ${apiPath} ${parameter.name}${assignment}${renderedExample}`);
+    return details.join('\n');
+  }
+
+  const lines = [`Parameters for ${method.toUpperCase()} ${apiPath}:`];
+  for (const parameter of parameters) {
+    const required = parameter.required ? 'required' : 'optional';
+    lines.push(`- ${parameter.name} (${required}, ${parameterType(parameter)}): ${parameterDescription(parameter)}`);
+  }
+  return lines.join('\n');
+}
+
+function addCompletionSeparator([candidates, partial]) {
+  if (candidates.length !== 1) return [candidates, partial];
+  const candidate = candidates[0];
+  const currentToken = partial.match(/\S*$/)?.[0] || '';
+  if (candidate === currentToken) return [candidates, partial];
+  if (apiRegistry.API_MODULES.some((apiModule) => apiModule.prefix === candidate)) {
+    return [candidates, partial];
+  }
+  if (apiRegistry.hasCompletionDescendants(candidate)) {
+    return [candidates, partial];
+  }
+  if (candidate.endsWith('/') || candidate.endsWith('==') ||
+      candidate.endsWith(':=') || /\s$/.test(candidate)) {
+    return [candidates, partial];
+  }
+  return [[`${candidate} `], partial];
 }
 
 const HELP = `Commands:
@@ -44,6 +109,8 @@ const HELP = `Commands:
   set account-switch-key <key>  Set the target account switch key
   set contract-id <id>          Set the default contract ID
   set group-id <id>             Set the default group ID
+  set log-level <level>       Set session logging (debug, info, warn, error)
+  set log-output <destination> Set logging destination (stderr, stdout, or file)
   set <name> <value>            Set a custom shell variable
   set                            Show settings and custom variables
   unset <name>                   Clear a setting or variable
@@ -55,6 +122,9 @@ const HELP = `Commands:
   history                        Show command history
   show                           Show non-secret settings
   help                           Show this help
+  ?                              Alias for help
+  record auto|on|off             Capture HTTP requests as JSONL
+  record show [--http]           Display captured request records
   exit                           Exit the shell`;
 
 function expandHome(value) {
@@ -324,14 +394,28 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     accountSwitchKey: '',
     contractId: '',
     groupId: '',
+    logLevel: 'info',
+    logOutput: 'stderr',
+    recordMode: 'off',
     parameterDefaults
   };
+  Object.defineProperty(settings, 'logger', {
+    value: createLogger(),
+    enumerable: false,
+    writable: false
+  });
   settings.accountSwitchKey = settings.parameterDefaults.accountSwitchKey || '';
   settings.contractId = settings.parameterDefaults.contractId || '';
   settings.groupId = settings.parameterDefaults.groupId || '';
   const variables = { ...environment.variables };
   const cache = new Map();
   let rl;
+  const recorder = createRecorder();
+  Object.defineProperty(settings, 'recorder', {
+    value: recorder,
+    enumerable: false,
+    writable: false
+  });
 
   function persistHistory() {
     try {
@@ -370,12 +454,13 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     const tokens = tokenize(commandLine);
     if (!tokens.length) return true;
     const command = tokens.shift().toLowerCase();
+    settings.logger.debug('Command received', { command });
     if (pipeline !== null && command !== 'get') {
       throw new Error('Pipelines are supported only after get commands; post and put do not support pipelines');
     }
 
     if (command === 'exit' || command === 'quit') return false;
-    if (command === 'help') {
+    if (command === 'help' || command === '?') {
       output.write(`${HELP}\n`);
       return true;
     }
@@ -390,6 +475,23 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     if (command === 'history') {
       const history = formatHistory(rl.history);
       if (history) output.write(`${history}\n`);
+      return true;
+    }
+    if (command === 'record') {
+      const action = tokens.shift();
+      if (action === 'show') {
+        if (tokens.length > 1 || (tokens.length === 1 && tokens[0] !== '--http')) {
+          throw new Error('Usage: record show [--http]');
+        }
+        const content = tokens[0] === '--http' ? recorder.http() : recorder.jsonl();
+        if (content) output.write(`${content}\n`);
+        return true;
+      }
+      if (tokens.length || !['auto', 'on', 'off'].includes(action)) {
+        throw new Error('Usage: record (auto|on|off) or record show [--http]');
+      }
+      recorder.setMode(action);
+      settings.recordMode = action;
       return true;
     }
     if (command === 'save' || command === 'load') {
@@ -415,6 +517,18 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         throw new Error(`Usage: unset ${SETTING_NAMES.join('|')}|<variable>`);
       }
       const setting = tokens[0];
+      if (setting === 'log-level') {
+        settings.logLevel = 'info';
+        settings.logger.setLevel('info');
+        cache.clear();
+        return true;
+      }
+      if (setting === 'log-output') {
+        settings.logOutput = 'stderr';
+        settings.logger.setOutput('stderr');
+        cache.clear();
+        return true;
+      }
       if (SETTING_NAMES.includes(setting)) {
         const key = setting === 'edgerc-section' ? 'edgercSection'
           : setting === 'account-switch-key' ? 'accountSwitchKey'
@@ -439,6 +553,19 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       }
       const name = tokens[0];
       const value = tokens.slice(1).join(' ');
+      if (name === 'log-level') {
+        settings.logLevel = LEVELS.includes(value) ? value : 'info';
+        settings.logger.setLevel(settings.logLevel);
+        settings.logger.info('Log level changed', { level: settings.logLevel });
+        return true;
+      }
+      if (name === 'log-output') {
+        const destination = value === 'stderr' || value === 'stdout' ? value : expandHome(value);
+        settings.logger.setOutput(destination);
+        settings.logOutput = destination;
+        settings.logger.info('Log output changed', { destination });
+        return true;
+      }
       if (SETTING_NAMES.includes(name)) {
         const key = name === 'edgerc-section' ? 'edgercSection'
           : name === 'account-switch-key' ? 'accountSwitchKey'
@@ -472,7 +599,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command !== 'get' && command !== 'post' && command !== 'put') {
-      throw new Error('Usage: get|post|put [-f <path>] <api-path> [...]');
+      output.write('ERROR: Unknown command - type `help` for help\n');
+      return true;
     }
 
     const expandVariable = (value) =>
@@ -522,10 +650,26 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
 
   async function complete(line) {
     if (/^\S*$/.test(line)) {
-      return [COMMANDS.filter((command) => command.startsWith(line)), line];
+      return [sortCandidates(COMMANDS.filter((command) => command.startsWith(line))), line];
+    }
+    const recordMatch = line.match(/^record\s+(\S*)$/);
+    if (recordMatch) {
+      const partial = recordMatch[1];
+      return [sortCandidates(['auto', 'off', 'on', 'show'].filter((value) =>
+        value.startsWith(partial))), partial];
+    }
+    const logLevelMatch = line.match(/^set\s+log-level\s+(\S*)$/);
+    if (logLevelMatch) {
+      const partial = logLevelMatch[1];
+      return [LEVELS.filter((level) => level.startsWith(partial)), partial];
+    }
+    const logOutputMatch = line.match(/^set\s+log-output\s+(\S*)$/);
+    if (logOutputMatch) {
+      const partial = logOutputMatch[1];
+      return [['stderr', 'stdout'].filter((destination) => destination.startsWith(partial)), partial];
     }
     if (/^set\s*$/.test(line)) {
-      return [SETTING_NAMES, ''];
+      return [sortCandidates(SETTING_NAMES), ''];
     }
     const contextMatch = line.match(/^set\s+(contract-id|group-id)\s+(\S*)$/);
     if (contextMatch) {
@@ -541,12 +685,12 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     const optionMatch = line.match(/^(get|post|put)\s+(-\S*)$/);
     if (optionMatch) {
       const token = optionMatch[2];
-      return [['-f'].filter((option) => option.startsWith(token)), token];
+      return [sortCandidates(['-f'].filter((option) => option.startsWith(token))), token];
     }
     const queryMatch = line.match(/^(get|post|put)\s+\S+\s+(\S*)$/);
     if (queryMatch) {
       const token = queryMatch[2];
-      return [QUERY_PARAMETER_CANDIDATES.filter((candidate) => candidate.startsWith(token)), token];
+      return [sortCandidates(QUERY_PARAMETER_CANDIDATES.filter((candidate) => candidate.startsWith(token))), token];
     }
     const match = line.match(/^(get|post|put)\s+(\S*)$/);
     if (!match) return [[], line];
@@ -555,6 +699,24 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       match[1].toUpperCase(), inputPath, settings, cache, requestGet
     );
     return result;
+  }
+
+  async function showParameterHelp(line) {
+    const match = line.match(/^(get|post|put)\s+(\S+)\s+(\S*)$/) ||
+      line.match(/^(get|post|put)\s+(\S+)\?$/);
+    if (!match) return false;
+    const [, method, apiPath, token = '?'] = match;
+    if (!token.endsWith('?')) return false;
+    const helpToken = token.slice(0, -1);
+    const parameterName = helpToken === '' ? undefined : helpToken.replace(/(?:==|:=)$/, '');
+    const assignment = helpToken.endsWith(':=') ? ':=' : '==';
+    if (helpToken !== '' && !/^[A-Za-z0-9_-]+(?:==|:=)?$/.test(helpToken)) return false;
+    const parameters = apiRegistry.parameterHelp(method.toUpperCase(), apiPath, parameterName);
+    const help = formatParameterHelp(method, apiPath, parameters, parameterName, assignment);
+    if (!help) return false;
+    output.write(`\n${help}\n`);
+    rl._refreshLine();
+    return true;
   }
 
   rl = readline.createInterface({
@@ -566,7 +728,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     removeHistoryDuplicates: true,
     completer(line, callback) {
       complete(line).then((result) => {
-        callback(null, result);
+        callback(null, addCompletionSeparator(result));
       }, (error) => callback(error));
     }
   });
@@ -652,6 +814,17 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         updateSearch();
         return;
       }
+      const isQuestionMark = character === '?' || key?.name === '?' || key?.sequence === '?';
+      if (isQuestionMark && !key?.ctrl && !key?.meta) {
+        const line = `${rl.line.slice(0, rl.cursor)}?`;
+        showParameterHelp(line).then((shown) => {
+          if (!shown) ttyWrite('?', key);
+        }, (error) => {
+          output.write(`Error: ${error.message}\n`);
+          rl._refreshLine();
+        });
+        return;
+      }
       ttyWrite(character, key);
     };
   }
@@ -667,6 +840,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         }
       })
       .catch((error) => {
+        settings.logger.warn('Command failed', { message: error.message, statusCode: error.statusCode });
         const status = error.statusCode ? ` (HTTP ${error.statusCode})` : '';
         const details = error.body ? `: ${typeof error.body === 'string' ? error.body : JSON.stringify(error.body)}` : '';
         output.write(`Error${status}: ${error.message}${details}\n`);
@@ -700,6 +874,8 @@ module.exports = {
   saveParameterDefaults,
   SETTING_NAMES,
   settingCandidates,
+  formatParameterHelp,
+  addCompletionSeparator,
   contextCandidates: apiRegistry.API_MODULES.find((apiModule) =>
     apiModule.contextCandidates)?.contextCandidates
 };

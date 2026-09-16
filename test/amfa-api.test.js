@@ -80,8 +80,8 @@ test('completes AMFA users and devices with cached collection responses', async 
     '/amfa/v1/users/user_alpha/devices/device_', {}, cache, requestGet
   );
   assert.deepEqual(result[0], [
-    '/amfa/v1/users/user_alpha/devices/device_phone',
-    '/amfa/v1/users/user_alpha/devices/device_key'
+    '/amfa/v1/users/user_alpha/devices/device_key',
+    '/amfa/v1/users/user_alpha/devices/device_phone'
   ]);
   assert.equal(calls.length, 2);
 });

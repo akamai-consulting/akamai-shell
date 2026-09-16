@@ -23,6 +23,7 @@ function createApiModule({
   methodStaticPaths = {},
   combineStaticCandidates = false,
   requestHeaders,
+  requestMethod,
   bodyRequired = {}
 }) {
   const normalizedMethodPaths = Object.fromEntries(
@@ -58,11 +59,15 @@ function createApiModule({
   }
 
   function requestApi(settings, apiPath, query, requestHandler, method = 'GET', body) {
+    settings.logger?.debug('API request dispatch', { module: name, method, path: apiPath });
     if (requestHandler) {
       if (method === 'GET') return requestHandler(settings, apiPath, query);
       return requestHandler(settings, apiPath, query, body, method);
     }
     if (method === 'GET' && request) return request(settings, apiPath, query);
+    if (method !== 'GET' && requestMethod) {
+      return requestMethod(settings, apiPath, method, query, body);
+    }
     const headers = typeof requestHeaders === 'function'
       ? requestHeaders(settings, method, apiPath)
       : undefined;
@@ -138,6 +143,7 @@ function createApiModule({
     },
 
     async completeMethod(method, apiPath, settings, cache, requestGet) {
+      settings.logger?.debug('API completion', { module: name, method, path: apiPath });
       if (apiPath === '/') {
         const normalizedMethod = method.toUpperCase();
         const paths = normalizedMethod === 'GET' ? staticPaths :

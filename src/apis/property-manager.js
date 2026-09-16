@@ -1,6 +1,6 @@
 'use strict';
 
-const { get } = require('../papi-client');
+const { get, requestMethod } = require('../papi-client');
 const { createApiModule } = require('../api-module');
 const {
   staticPaths,
@@ -37,9 +37,13 @@ const PropertyManager = createApiModule({
   staticPaths,
   dynamicCollections,
   request: get,
-  methodPaths: { GET: methodPaths.GET || [] },
-  methodStaticPaths: Object.fromEntries(Object.entries(methodStaticPaths)
-    .filter(([method]) => method !== 'GET'))
+  requestMethod,
+  methodPaths: {
+    GET: methodPaths.GET || [],
+    POST: methodPaths.POST || [],
+    PUT: methodPaths.PUT || []
+  },
+  methodStaticPaths
 });
 
 PropertyManager.contextCandidates = contextCandidates;

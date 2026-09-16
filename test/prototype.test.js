@@ -22,14 +22,29 @@ const {
   loadParameterDefaults,
   saveParameterDefaults,
   settingCandidates,
-  contextCandidates
+  contextCandidates,
+  formatParameterHelp,
+  addCompletionSeparator
 } = require('../src/repl');
+const apiRegistry = require('../src/api-registry');
 const { collectionFor, dynamicCandidates, pathCandidates } = require('../src/catalog');
 
 test('parses a PAPI path and query parameters', () => {
   assert.deepEqual(parseQuery('/properties?limit=2&accountSwitchKey=a%3Ab'), {
     path: '/properties',
     query: { limit: '2', accountSwitchKey: 'a:b' }
+  });
+
+  test('sets and completes the session log level with info fallback', async () => {
+    const output = new PassThrough();
+    const input = new PassThrough();
+    const repl = createRepl(output, input, undefined, path.join(os.tmpdir(), `history-${Date.now()}`));
+
+    await repl.execute('set log-level debug');
+    assert.equal(repl.settings.logLevel, 'debug');
+    await repl.execute('set log-level invalid');
+    assert.equal(repl.settings.logLevel, 'info');
+    assert.deepEqual(await repl.complete('set log-level '), [['debug', 'info', 'warn', 'error'], '']);
   });
 });
 
@@ -69,6 +84,77 @@ test('completes HTTPie-style query parameter names', () => {
   assert(QUERY_PARAMETER_CANDIDATES.includes('groupId=='));
 });
 
+test('adds a separator only after a complete completion candidate', () => {
+  assert.deepEqual(addCompletionSeparator([['/properties'], '/prop']), [
+    ['/properties '], '/prop'
+  ]);
+  for (const path of ['/papi/v1', '/edgeworkers/v1', '/cloudlets/v3', '/ccu/v3']) {
+    assert.deepEqual(addCompletionSeparator([[path], path]), [[path], path]);
+  }
+  assert.deepEqual(addCompletionSeparator([['/papi/v1'], '/pap']), [
+    ['/papi/v1'], '/pap'
+  ]);
+  assert.deepEqual(addCompletionSeparator([
+    ['/papi/v1/properties/prp_1047813'], '/papi/v1/properties/prp_1047'
+  ]), [
+    ['/papi/v1/properties/prp_1047813'], '/papi/v1/properties/prp_1047'
+  ]);
+  assert.deepEqual(addCompletionSeparator([
+    ['/papi/v1/properties'], '/papi/v1/prope'
+  ]), [
+    ['/papi/v1/properties'], '/papi/v1/prope'
+  ]);
+  for (const [candidate, partial] of [
+    ['/edgeworkers/v1', '/edgew'],
+    ['/cloudlets/v3/policies', '/cloudlets/v3/pol'],
+    ['/ccu/v3/delete', '/ccu/v3/del']
+  ]) {
+    assert.deepEqual(addCompletionSeparator([[candidate], partial]), [
+      [candidate], partial
+    ]);
+  }
+  assert.deepEqual(addCompletionSeparator([['/properties/'], '/properties']), [
+    ['/properties/'], '/properties'
+  ]);
+  assert.deepEqual(addCompletionSeparator([['contractId=='], 'contract']), [
+    ['contractId=='], 'contract'
+  ]);
+});
+
+test('formats OpenAPI parameter help for list and detail contexts', () => {
+  const parameters = apiRegistry.parameterHelp('GET', '/papi/v1/properties');
+  const listHelp = formatParameterHelp('GET', '/papi/v1/properties', parameters);
+  assert.match(listHelp, /contractId/);
+  assert.match(listHelp, /required/);
+  assert.match(listHelp, /Unique identifier for the contract/);
+
+  const detailHelp = formatParameterHelp(
+    'GET',
+    '/papi/v1/properties',
+    apiRegistry.parameterHelp('GET', '/papi/v1/properties', 'contractId'),
+    'contractId'
+  );
+  assert.match(detailHelp, /Type: string/);
+  assert.match(detailHelp, /Usage: get \/papi\/v1\/properties contractId==ctr_1-1TJZFW/);
+
+  const jsonHelp = formatParameterHelp(
+    'POST',
+    '/papi/v1/properties',
+    apiRegistry.parameterHelp('GET', '/papi/v1/properties', 'contractId'),
+    'contractId',
+    ':='
+  );
+  assert.match(jsonHelp, /contractId:="ctr_1-1TJZFW"/);
+
+  const ccuHelp = formatParameterHelp(
+    'POST',
+    '/ccu/v3',
+    apiRegistry.parameterHelp('POST', '/ccu/v3')
+  );
+  assert.match(ccuHelp, /network/);
+  assert.match(ccuHelp, /objects/);
+});
+
 test('completes command names', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
@@ -77,6 +163,26 @@ test('completes command names', async () => {
 
   assert.deepEqual(await repl.complete('po'), [['post'], 'po']);
   assert(COMMANDS.includes('put'));
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('supports the question-mark help alias and current unknown-command error', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-command-errors-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+  output.read();
+
+  await repl.execute('?');
+  const help = output.read().toString();
+  assert.match(help, /Commands:/);
+
+  await repl.execute('not-a-command');
+  assert.equal(output.read().toString(), 'ERROR: Unknown command - type `help` for help\n');
+
   repl.rl.close();
   input.destroy();
   output.destroy();
@@ -201,6 +307,57 @@ test('reads POST bodies from a file and writes GET responses to a file', async (
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('reads Cloudlets PUT bodies from a file', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-cloudlets-put-'));
+  const historyPath = path.join(directory, 'history');
+  const bodyPath = path.join(directory, 'rcc.json');
+  fs.writeFileSync(bodyPath, '{"matchRules":[{"name":"example"}]}');
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query, body, method) => {
+    requests.push({ requestPath, query, body, method });
+    return { body: { accepted: true } };
+  }, historyPath);
+
+  await repl.execute(`put -f ${bodyPath} /cloudlets/v3/policies/371861/versions/1`);
+  assert.deepEqual(requests, [{
+    requestPath: '/policies/371861/versions/1',
+    query: {},
+    body: { matchRules: [{ name: 'example' }] },
+    method: 'PUT'
+  }]);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('routes Cloudlets policy version POST arguments', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-cloudlets-post-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query, body, method) => {
+    requests.push({ requestPath, query, body, method });
+    return { body: { accepted: true } };
+  }, path.join(directory, 'history'));
+
+  await repl.execute('post /cloudlets/v3/policies/371861/versions policyId:=371861 matchRules:=[] description==test');
+  assert.deepEqual(requests, [{
+    requestPath: '/policies/371861/versions',
+    query: { description: 'test' },
+    body: { policyId: 371861, matchRules: [] },
+    method: 'POST'
+  }]);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('tokenizes quoted shell values', () => {
   assert.deepEqual(tokenize('set edgerc "~/.edgerc"'), ['set', 'edgerc', '~/.edgerc']);
 });
@@ -231,7 +388,7 @@ test('completes property versions from the property version collection', () => {
   assert.equal(collection.collection(input), '/properties/prp_123/versions');
   assert.deepEqual(dynamicCandidates(input, {
     versions: { items: [{ propertyVersion: 3 }, { propertyVersion: 2 }] }
-  }), ['3', '2']);
+  }), ['2', '3']);
 });
 
 test('provides static PAPI path candidates', () => {
@@ -253,21 +410,23 @@ test('resolves nested paths after a dynamic property ID', () => {
   assert.deepEqual(
     pathCandidates('/properties/prp_615111/'),
     [
-      '/properties/prp_615111/versions',
       '/properties/prp_615111/activations',
       '/properties/prp_615111/hostname-activations',
-      '/properties/prp_615111/hostnames'
+      '/properties/prp_615111/hostnames',
+      '/properties/prp_615111/versions'
     ]
   );
 });
 
 test('provides set command setting candidates', () => {
   assert.deepEqual(settingCandidates(''), [
-    'edgerc',
-    'edgerc-section',
     'account-switch-key',
     'contract-id',
-    'group-id'
+    'edgerc',
+    'edgerc-section',
+    'group-id',
+    'log-level',
+    'log-output'
   ]);
   assert.deepEqual(settingCandidates('edgerc-'), ['edgerc-section']);
   assert.deepEqual(settingCandidates('account'), ['account-switch-key']);
@@ -594,6 +753,35 @@ test('completes Cloudlets v3 policy versions from the version collection', async
     '/cloudlets/v3/policies/371861/versions/'
   ]);
   assert.deepEqual(requests, ['/policies/371861/versions']);
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(historyDirectory, { recursive: true, force: true });
+});
+
+test('completes Cloudlets v3 policy IDs from the policy collection', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const historyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-test-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath) => {
+    requests.push(requestPath);
+    return {
+      body: {
+        content: [{ id: 371861 }, { id: 482902 }]
+      }
+    };
+  }, path.join(historyDirectory, 'history'));
+
+  const result = await repl.complete('get /cloudlets/v3/policies/');
+  assert.deepEqual(result, [
+    [
+      '/cloudlets/v3/policies/371861',
+      '/cloudlets/v3/policies/482902'
+    ],
+    '/cloudlets/v3/policies/'
+  ]);
+  assert.deepEqual(requests, ['/policies']);
   repl.rl.close();
   input.destroy();
   output.destroy();

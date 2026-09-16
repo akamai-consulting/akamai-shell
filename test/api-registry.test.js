@@ -18,6 +18,41 @@ test('routes slash-prefixed paths to the PropertyManager module', async () => {
   });
 });
 
+test('routes Property Manager rule-tree PUT requests', async () => {
+  const rules = { behaviors: [], children: [] };
+  const response = await apiRegistry.put(
+    {},
+    '/papi/v1/properties/prp_366150/versions/10/rules',
+    {},
+    rules,
+    async (settings, path, query, body, method) => ({ settings, path, query, body, method })
+  );
+  assert.deepEqual(response, {
+    settings: {},
+    path: '/properties/prp_366150/versions/10/rules',
+    query: {},
+    body: rules,
+    method: 'PUT'
+  });
+});
+
+test('routes Property Manager version creation POST requests', async () => {
+  const response = await apiRegistry.post(
+    {},
+    '/papi/v1/properties/prp_366150/versions',
+    {},
+    { createFromVersion: 10 },
+    async (settings, path, query, body, method) => ({ settings, path, query, body, method })
+  );
+  assert.deepEqual(response, {
+    settings: {},
+    path: '/properties/prp_366150/versions',
+    query: {},
+    body: { createFromVersion: 10 },
+    method: 'POST'
+  });
+});
+
 test('routes Cloudlets paths to the Cloudlets module', async () => {
   assert.equal(apiRegistry.moduleFor('/cloudlets/v3/cloudlet-info').name, 'Cloudlets');
   assert.equal(apiRegistry.moduleFor('/cloudlets/v3/policies').name, 'Cloudlets');
@@ -51,6 +86,59 @@ test('routes Cloudlets paths to the Cloudlets module', async () => {
     });
 
   assert.deepEqual(request, { settings: {}, path: '/policies', query: { cloudletId: '3' } });
+});
+
+test('routes Cloudlets v3 policy version PUT requests', async () => {
+  const body = { matchRules: [{ name: 'example' }] };
+  const response = await apiRegistry.put(
+    {},
+    '/cloudlets/v3/policies/371861/versions/1',
+    {},
+    body,
+    async (settings, path, query, requestBody, method) => ({
+      settings, path, query, body: requestBody, method
+    })
+  );
+  assert.deepEqual(response, {
+    settings: {},
+    path: '/policies/371861/versions/1',
+    query: {},
+    body,
+    method: 'PUT'
+  });
+});
+
+test('normalizes a fetched Cloudlets Request Control version for PUT', () => {
+  const cloudlets = apiRegistry.moduleFor('/cloudlets/v3/policies/371861/versions/1');
+  assert.deepEqual(cloudlets.putPolicyVersionBody({
+    id: 20079764,
+    version: 1,
+    immutable: true,
+    description: null,
+    policyId: 371861,
+    matchRules: [{
+      type: 'igMatchRule',
+      matchURL: null,
+      allowDeny: 'deny'
+    }]
+  }), {
+    description: '',
+    matchRules: [{
+      type: 'igMatchRule',
+      allowDeny: 'deny'
+    }]
+  });
+});
+
+test('normalizes Cloudlets policy version POST arguments', () => {
+  const cloudlets = apiRegistry.moduleFor('/cloudlets/v3/policies/371861/versions');
+  assert.deepEqual(cloudlets.postPolicyVersionBody(
+    { policyId: 371861, matchRules: [] },
+    { description: 'test' }
+  ), {
+    matchRules: [],
+    description: 'test'
+  });
 });
 
 test('discovers and routes JWT API by service prefix', () => {

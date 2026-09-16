@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { get, validateRequiredParameters } = require('../src/papi-client');
+const { get, requestMethod, validateRequiredParameters } = require('../src/papi-client');
 
 function fakeClientFactory(requests, body) {
   return () => ({
@@ -31,6 +31,49 @@ test('gets contracts through the PAPI endpoint', async () => {
   assert.equal(requests[0].method, 'GET');
   assert.equal(requests[0].headers.Accept, 'application/json');
   assert.equal(requests[0].headers['PAPI-Use-Prefixes'], 'true');
+});
+
+test('puts a property version rule tree through PAPI', async () => {
+  const requests = [];
+  const rules = { behaviors: [], children: [] };
+  const response = await requestMethod(
+    {
+      edgerc: '/tmp/test-edgerc',
+      edgercSection: 'papi',
+      accountSwitchKey: 'ask_123'
+    },
+    '/properties/prp_366150/versions/10/rules',
+    'PUT',
+    {},
+    rules,
+    fakeClientFactory(requests, { rules })
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { rules });
+  assert.equal(requests[0].path, '/papi/v1/properties/prp_366150/versions/10/rules');
+  assert.equal(requests[0].method, 'PUT');
+  assert.deepEqual(requests[0].body, rules);
+  assert.equal(requests[0].qs.accountSwitchKey, 'ask_123');
+  assert.equal(requests[0].headers['PAPI-Use-Prefixes'], 'true');
+  assert.equal(requests[0].headers['Content-Type'], 'application/json');
+});
+
+test('posts a property version creation request through PAPI', async () => {
+  const requests = [];
+  const response = await requestMethod(
+    { edgerc: '/tmp/test-edgerc', edgercSection: 'papi' },
+    '/properties/prp_366150/versions',
+    'POST',
+    {},
+    { createFromVersion: 10 },
+    fakeClientFactory(requests, { propertyVersion: { propertyVersion: 11 } })
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(requests[0].path, '/papi/v1/properties/prp_366150/versions');
+  assert.equal(requests[0].method, 'POST');
+  assert.deepEqual(requests[0].body, { createFromVersion: 10 });
 });
 
 test('adds global contract and group IDs to contextual resources', async () => {

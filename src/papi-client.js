@@ -46,8 +46,30 @@ async function get(settings, apiPath, query = {}, clientFactory = transport.crea
   });
 }
 
+async function requestMethod(settings, apiPath, method, query = {}, body,
+  clientFactory = transport.createClient) {
+  const normalizedPath = transport.normalizePath(apiPath);
+  const qs = { ...(settings.parameterDefaults || {}), ...query };
+  if (settings.accountSwitchKey && qs.accountSwitchKey === undefined) {
+    qs.accountSwitchKey = settings.accountSwitchKey;
+  }
+  const supportsContext = CONTEXT_QUERY_PATHS.some((path) =>
+    normalizedPath === path || normalizedPath.startsWith(`${path}/`));
+  if (supportsContext) {
+    if (settings.contractId && qs.contractId === undefined) qs.contractId = settings.contractId;
+    if (settings.groupId && qs.groupId === undefined) qs.groupId = settings.groupId;
+  }
+  validateRequiredParameters(normalizedPath, qs);
+  return transport.requestMethod(settings, normalizedPath, method, qs, body, clientFactory,
+    PAPI_PREFIX, {
+      Accept: 'application/json',
+      'PAPI-Use-Prefixes': 'true'
+    });
+}
+
 module.exports = {
   get,
+  requestMethod,
   normalizePath: transport.normalizePath,
   PAPI_PREFIX,
   send: transport.send,

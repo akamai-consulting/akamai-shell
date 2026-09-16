@@ -72,7 +72,7 @@ test('completes properties from a GTM domain summary', async () => {
   );
 
   assert.deepEqual(candidates, [
-    '/gtm-api/v1/reports/domain-list/example.akadns.net/properties/www',
-    '/gtm-api/v1/reports/domain-list/example.akadns.net/properties/wildcard'
+    '/gtm-api/v1/reports/domain-list/example.akadns.net/properties/wildcard',
+    '/gtm-api/v1/reports/domain-list/example.akadns.net/properties/www'
   ]);
 });

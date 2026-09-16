@@ -20,9 +20,14 @@
 - DataStream Config API v2: `/datastream-config-api/v2`
 
 GET remains available for operations declared by each module's OpenAPI
-document. Edge Diagnostics v1 additionally supports its OpenAPI-derived POST
-operations. PUT parsing, routing, and transport
-are implemented generically, but no current module claims a PUT endpoint.
+document. Edge Diagnostics v1 supports its OpenAPI-derived POST operations.
+Cloudlets v3 supports its OpenAPI-derived PUT policy and policy-version
+operations, including normalization of fetched policy-version responses into
+PUT-compatible bodies, and POST policy-version creation.
+Property Manager supports creating property versions with POST and its
+OpenAPI-derived PUT rule-tree operations. POST, PUT parsing, routing, and
+transport are implemented generically. Unsupported method/path combinations
+fail explicitly.
 Unsupported method/path combinations fail explicitly. Activation/deactivation
 and mutation confirmation flows remain unsupported.
 
@@ -58,6 +63,12 @@ Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
 - History and environment state use persistent paths under
   `~/.config/akamai-shell/` with restrictive permissions.
 - Credential secrets are never persisted or displayed.
+- Session tracing is controlled with `set log-level debug|info|warn|error` and
+  `set log-output stderr|stdout|<file>`; debug traces include redacted HTTP
+  request and response details.
+- Minimal Script Developer Mode is available with `record auto|on|off`,
+  `record show`, and `record show --http`; captures are in-memory, redacted
+  JSONL records for the current session.
 
 ### Modular completion architecture
 
