@@ -551,17 +551,20 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       if (typeof property === 'string' && !CONFIG_NAMES.includes(property)) {
         throw new Error(`Unknown config property "${property}"`);
       }
-      target[property] = value;
+      const normalizedValue = property === 'edgerc' || property === 'logOutput'
+        ? expandHome(value)
+        : value;
+      target[property] = normalizedValue;
       if (property === 'logLevel') {
         target[property] = LEVELS.includes(value) ? value : 'info';
         target.logger?.setLevel(target[property]);
       } else if (property === 'logOutput') {
-        target.logger?.setOutput(value);
+        target.logger?.setOutput(normalizedValue);
       }
       if (['edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId']
         .includes(property)) {
         const parameterName = property === 'edgercSection' ? 'edgercSection' : property;
-        target.parameterDefaults[parameterName] = value;
+        target.parameterDefaults[parameterName] = target[property];
       }
       return true;
     },
