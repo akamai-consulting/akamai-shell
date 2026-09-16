@@ -22,7 +22,7 @@ const CONFIG_NAMES = [
   ...QUERY_PARAMETER_NAMES
 ];
 const COMMANDS = [
-  'get', 'post', 'put', 'save', 'load', 'show', 'history',
+  'get', 'post', 'put', 'show', 'history',
   'echo', 'record', 'help', '?', 'exit', 'quit'
 ];
 
@@ -109,8 +109,6 @@ const HELP = `Commands:
   get [-f <path>] <api-path>   Write the GET response to a file
       name=value                 String JSON field
       name:=value                JSON-typed field (number, boolean, object, array, or null)
-  save [-f <path>]               Save parameter defaults
-  load [-f <path>]               Load parameter defaults
   echo <text>                    Print text with variable expansion
   ! <shell command>              Run a local shell command
   history                        Show command history
@@ -125,12 +123,6 @@ function expandHome(value) {
   return value === '~' ? os.homedir() : value.startsWith('~/')
     ? `${os.homedir()}${value.slice(1)}`
     : value;
-}
-
-function optionPath(tokens) {
-  if (!tokens.length) return ENV_FILE;
-  if (tokens.length === 2 && tokens[0] === '-f') return expandHome(tokens[1]);
-  throw new Error('Usage: save|load [-f <path>]');
 }
 
 function parseQuery(apiPath) {
@@ -652,6 +644,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   async function execute(line) {
     const executeJavaScript = async (source) => {
       const value = await evaluateJavaScript(source, variables, false, isJavaScriptExpression(source));
+      persistParameters();
       if (value !== undefined) output.write(`${JSON.stringify(value)}\n`);
     };
     const trimmedLine = line.trim();
@@ -730,23 +723,6 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       }
       recorder.setMode(action);
       settings.recordMode = action;
-      return true;
-    }
-    if (command === 'save' || command === 'load') {
-      const filePath = optionPath(tokens);
-      if (command === 'save') {
-        saveEnvironment(filePath, settings.parameterDefaults, variables);
-      } else {
-        const loaded = loadEnvironment(filePath);
-        applyParameterDefaults(loaded.parameters);
-        Object.keys(variables).forEach((name) => {
-          if (name !== 'config') delete variables[name];
-        });
-        Object.entries(loaded.variables).forEach(([name, value]) => {
-          if (name !== 'config') variables[name] = value;
-        });
-        cache.clear();
-      }
       return true;
     }
     if (command !== 'get' && command !== 'post' && command !== 'put') {

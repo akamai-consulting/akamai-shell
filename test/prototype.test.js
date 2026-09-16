@@ -805,34 +805,32 @@ test('persists parameter defaults separately from history', () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('saves and loads parameter defaults through commands', async () => {
+test('persists configuration and variables automatically', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-env-command-'));
   const historyPath = path.join(directory, 'history');
-  const envPath = path.join(directory, 'saved-env');
   const repl = createRepl(output, input, undefined, historyPath);
 
   await repl.execute('config.edgerc = "/tmp/custom-edgerc"');
   await repl.execute('config.contractId = "ctr_command"');
   await repl.execute('foo = "saved-value"');
   await repl.execute('config.edgercSection = "papi"');
-  await repl.execute(`save -f ${envPath}`);
-  await repl.execute('config.contractId = "ctr_changed"');
-  await repl.execute('config.edgercSection = "changed"');
-  await repl.execute('delete foo');
-  await repl.execute(`load -f ${envPath}`);
-  assert.equal(repl.settings.contractId, 'ctr_command');
-  assert.equal(repl.settings.edgerc, '/tmp/custom-edgerc');
-  assert.equal(repl.settings.edgercSection, 'papi');
-  assert.equal(repl.settings.parameterDefaults.contractId, 'ctr_command');
-  assert.equal(repl.settings.parameterDefaults.edgerc, '/tmp/custom-edgerc');
-  assert.equal(repl.settings.parameterDefaults.edgercSection, 'papi');
-  assert.equal(repl.variables.foo, 'saved-value');
 
   repl.rl.close();
   input.destroy();
   output.destroy();
+
+  const nextInput = new PassThrough();
+  const nextOutput = new PassThrough();
+  const next = createRepl(nextOutput, nextInput, undefined, historyPath);
+  assert.equal(next.settings.contractId, 'ctr_command');
+  assert.equal(next.settings.edgerc, '/tmp/custom-edgerc');
+  assert.equal(next.settings.edgercSection, 'papi');
+  assert.equal(next.variables.foo, 'saved-value');
+  next.rl.close();
+  nextInput.destroy();
+  nextOutput.destroy();
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -859,7 +857,7 @@ test('loads the saved EdgeGrid section when starting a new shell', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('unset -a clears all API parameter defaults', async () => {
+test('deleting config and variables persists the cleared state', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-unset-all-'));
@@ -869,7 +867,6 @@ test('unset -a clears all API parameter defaults', async () => {
   await repl.execute('config.groupId = "grp_command"');
   await repl.execute('config.limit = "10"');
   await repl.execute('foo = "bar"');
-  const savedDefaults = fs.readFileSync(path.join(directory, 'env'), 'utf8');
   await repl.execute('delete config.contractId');
   await repl.execute('delete config.groupId');
   await repl.execute('delete config.limit');
@@ -878,7 +875,10 @@ test('unset -a clears all API parameter defaults', async () => {
   assert.equal(repl.settings.contractId, '');
   assert.equal(repl.settings.groupId, '');
   assert.deepEqual(repl.settings.parameterDefaults, {});
-  assert.equal(fs.readFileSync(path.join(directory, 'env'), 'utf8'), savedDefaults);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'env'), 'utf8')), {
+    parameters: {},
+    variables: {}
+  });
   await repl.execute('echo $foo');
 
   repl.rl.close();
