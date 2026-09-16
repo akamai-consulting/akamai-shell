@@ -592,7 +592,7 @@ test('defines, expands, lists, and unsets custom variables', async () => {
 
   await repl.execute('set foo bar baz');
   await repl.execute('echo $foo');
-  assert.match(printed, /bar baz\n/);
+  assert.match(printed, /"bar baz"\n/);
   printed = '';
   await repl.execute('set');
   assert.match(printed, /"foo": "bar baz"/);

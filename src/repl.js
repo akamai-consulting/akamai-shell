@@ -265,6 +265,11 @@ function evaluateJavaScript(expression, variables) {
   }
 }
 
+function serializeVariable(value) {
+  const serialized = JSON.stringify(value);
+  return serialized === undefined ? '' : serialized;
+}
+
 function isJavaScriptStatement(line) {
   return /^\s*(?:[A-Za-z_$][\w$]*\s*(?:=|[[(])|delete\s+)/.test(line);
 }
@@ -509,7 +514,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       return true;
     }
     if (command === 'echo') {
-      output.write(`${tokens.join(' ').replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, name) => variables[name] ?? '')}\n`);
+      output.write(`${tokens.join(' ').replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g,
+        (_, name) => serializeVariable(variables[name]))}\n`);
       return true;
     }
     if (command === 'history') {
@@ -644,7 +650,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     }
 
     const expandVariable = (value) =>
-      value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, variable) => variables[variable] ?? '');
+      value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g,
+        (_, variable) => serializeVariable(variables[variable]));
     const fileOption = extractFileOption(tokens, command);
     const valueOption = command === 'get'
       ? { remaining: fileOption.remaining, expression: undefined }
@@ -674,7 +681,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     }
     request.query = Object.fromEntries(Object.entries(request.query).map(([name, value]) => [
       name,
-      value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, variable) => variables[variable] ?? '')
+      value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g,
+        (_, variable) => serializeVariable(variables[variable]))
     ]));
     const response = command === 'get'
       ? await apiRegistry.get(settings, request.path, request.query, requestGet)
