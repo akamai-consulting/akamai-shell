@@ -77,7 +77,7 @@ function formatParameterHelp(method, apiPath, parameters, parameterName, assignm
   return lines.join('\n');
 }
 
-function addCompletionSeparator([candidates, partial]) {
+function addCompletionSeparator([candidates, partial], variables) {
   if (candidates.length !== 1) return [candidates, partial];
   const candidate = candidates[0];
   const currentToken = partial.match(/\S*$/)?.[0] || '';
@@ -91,6 +91,16 @@ function addCompletionSeparator([candidates, partial]) {
   if (candidate.endsWith('/') || candidate.endsWith('==') ||
       candidate.endsWith(':=') || /\s$/.test(candidate)) {
     return [candidates, partial];
+  }
+  if (variables) {
+    try {
+      const value = vm.runInNewContext(candidate, variables);
+      if (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+        return [candidates, partial];
+      }
+    } catch {
+      // Non-JavaScript completion candidates use the normal separator rules.
+    }
   }
   return [[`${candidate} `], partial];
 }
@@ -859,7 +869,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     removeHistoryDuplicates: true,
     completer(line, callback) {
       complete(line).then((result) => {
-        callback(null, addCompletionSeparator(result));
+        callback(null, addCompletionSeparator(result, variables));
       }, (error) => callback(error));
     }
   });

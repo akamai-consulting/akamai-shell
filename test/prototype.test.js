@@ -192,6 +192,15 @@ test('adds a separator only after a complete completion candidate', () => {
   assert.deepEqual(addCompletionSeparator([['contractId=='], 'contract']), [
     ['contractId=='], 'contract'
   ]);
+  const variables = { foo: { activations: [{ id: 1 }] } };
+  assert.deepEqual(addCompletionSeparator(
+    [['foo["activations"]'], 'foo["activatio'],
+    variables
+  ), [['foo["activations"]'], 'foo["activatio']);
+  assert.deepEqual(addCompletionSeparator(
+    [['foo["activations"][0]["id"]'], 'foo["activations"][0]["i'],
+    variables
+  ), [['foo["activations"][0]["id"] '], 'foo["activations"][0]["i']);
 });
 
 test('formats OpenAPI parameter help for list and detail contexts', () => {
