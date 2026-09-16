@@ -37,6 +37,16 @@ akamai> config.edgerc = "~/.edgerc"
 akamai> config.edgercSection = "papi"
 ```
 
+Set the complete active PAPI target context as one value:
+
+```javascript
+config.target = {
+  accountSwitchKey: "B-C-1ED34DK",
+  contractId: "ctr_123",
+  groupId: "grp_456"
+}
+```
+
 Configuration and JSON-serializable session variables are persisted under
 `~/.config/akamai-shell/`. Credential values and secret request headers are
 never displayed or persisted by the shell.
@@ -90,8 +100,11 @@ session. Values can be assigned, updated, indexed, filtered, and passed to
 later requests:
 
 ```javascript
-config.contractId = "ctr_123"
-config.groupId = "grp_456"
+config.target = {
+  accountSwitchKey: "B-C-1ED34DK",
+  contractId: "ctr_123",
+  groupId: "grp_456"
+}
 
 groups = await $("get /papi/v1/groups")
 groups.groups.items

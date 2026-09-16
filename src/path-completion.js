@@ -104,12 +104,13 @@ function stableValue(value) {
 }
 
 function requestCacheKey(prefix, collection, settings = {}, query = {}) {
+  const target = settings.target || settings;
   const requestSettings = {
     edgerc: settings.edgerc,
     edgercSection: settings.edgercSection,
-    accountSwitchKey: settings.accountSwitchKey,
-    contractId: settings.contractId,
-    groupId: settings.groupId,
+    accountSwitchKey: target.accountSwitchKey,
+    contractId: target.contractId,
+    groupId: target.groupId,
     parameterDefaults: settings.parameterDefaults || {}
   };
   return `${prefix}|${collection}|${JSON.stringify(stableValue({

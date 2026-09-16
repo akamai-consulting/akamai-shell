@@ -48,7 +48,8 @@ const DYNAMIC_COLLECTIONS = [
 
 function requestHeaders(settings) {
   const defaults = settings.parameterDefaults || {};
-  const contract = settings.contractId || defaults.contractId || defaults.Contract;
+  const target = settings.target || settings;
+  const contract = target.contractId || defaults.contractId || defaults.Contract;
   const policySet = settings.policySetId || defaults.policySetId || defaults['Policy-Set'];
   return {
     Accept: 'application/json',

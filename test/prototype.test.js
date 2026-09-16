@@ -422,6 +422,10 @@ test('supports the question-mark help alias and JavaScript fallback', async () =
   await repl.execute('?');
   const help = output.read().toString();
   assert.match(help, /Commands:/);
+  assert.match(help, /Requests:/);
+  assert.match(help, /Data and shell:/);
+  assert.match(help, /config\.<name> = <value>/);
+  assert.match(help, /echo <text> \[\| command\]/);
 
   await repl.execute('foo = []');
   output.read();
@@ -1015,6 +1019,58 @@ test('persists configuration and variables automatically', async () => {
   assert.equal(next.settings.recordMode, 'off');
   assert.equal(next.settings.recorder.mode, 'off');
   assert.equal(next.variables.foo, 'saved-value');
+  next.rl.close();
+  nextInput.destroy();
+  nextOutput.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('switches target context as one persisted config value', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-target-'));
+  const historyPath = path.join(directory, 'history');
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query) => {
+    requests.push({
+      requestPath,
+      query,
+      accountSwitchKey: settings.accountSwitchKey,
+      target: settings.target
+    });
+    return { body: { properties: { items: [] } } };
+  }, historyPath);
+
+  await repl.execute('config.accountSwitchKey = "ask_global"');
+  await repl.execute('config.target = {"accountSwitchKey":"ask_target","contractId":"ctr_target","groupId":"grp_target"}');
+  await repl.execute('get /papi/v1/properties');
+  assert.equal(requests[0].accountSwitchKey, 'ask_target');
+  assert.deepEqual(requests[0].target, {
+    accountSwitchKey: 'ask_target',
+    contractId: 'ctr_target',
+    groupId: 'grp_target'
+  });
+  assert.deepEqual(repl.settings.target, {
+    accountSwitchKey: 'ask_target',
+    contractId: 'ctr_target',
+    groupId: 'grp_target'
+  });
+  assert.equal(repl.settings.contractId, 'ctr_target');
+  assert.equal(repl.settings.groupId, 'grp_target');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+
+  const nextInput = new PassThrough();
+  const nextOutput = new PassThrough();
+  const next = createRepl(nextOutput, nextInput, undefined, historyPath);
+  assert.deepEqual(next.settings.target, {
+    accountSwitchKey: 'ask_target',
+    contractId: 'ctr_target',
+    groupId: 'grp_target'
+  });
+  assert.equal(next.settings.accountSwitchKey, 'ask_target');
   next.rl.close();
   nextInput.destroy();
   nextOutput.destroy();

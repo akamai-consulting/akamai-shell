@@ -29,14 +29,15 @@ function validateRequiredParameters(apiPath, query) {
 async function get(settings, apiPath, query = {}, clientFactory = transport.createClient) {
   const normalizedPath = transport.normalizePath(apiPath);
   const qs = { ...(settings.parameterDefaults || {}), ...query };
+  const target = settings.target || settings;
   const supportsContext = CONTEXT_QUERY_PATHS.some((path) =>
     normalizedPath === path || normalizedPath.startsWith(`${path}/`));
-  if (settings.accountSwitchKey && qs.accountSwitchKey === undefined) {
-    qs.accountSwitchKey = settings.accountSwitchKey;
+  if (target.accountSwitchKey && qs.accountSwitchKey === undefined) {
+    qs.accountSwitchKey = target.accountSwitchKey;
   }
   if (supportsContext) {
-    if (settings.contractId && qs.contractId === undefined) qs.contractId = settings.contractId;
-    if (settings.groupId && qs.groupId === undefined) qs.groupId = settings.groupId;
+    if (target.contractId && qs.contractId === undefined) qs.contractId = target.contractId;
+    if (target.groupId && qs.groupId === undefined) qs.groupId = target.groupId;
   }
   validateRequiredParameters(normalizedPath, qs);
 
@@ -50,14 +51,15 @@ async function requestMethod(settings, apiPath, method, query = {}, body,
   clientFactory = transport.createClient) {
   const normalizedPath = transport.normalizePath(apiPath);
   const qs = { ...(settings.parameterDefaults || {}), ...query };
-  if (settings.accountSwitchKey && qs.accountSwitchKey === undefined) {
-    qs.accountSwitchKey = settings.accountSwitchKey;
+  const target = settings.target || settings;
+  if (target.accountSwitchKey && qs.accountSwitchKey === undefined) {
+    qs.accountSwitchKey = target.accountSwitchKey;
   }
   const supportsContext = CONTEXT_QUERY_PATHS.some((path) =>
     normalizedPath === path || normalizedPath.startsWith(`${path}/`));
   if (supportsContext) {
-    if (settings.contractId && qs.contractId === undefined) qs.contractId = settings.contractId;
-    if (settings.groupId && qs.groupId === undefined) qs.groupId = settings.groupId;
+    if (target.contractId && qs.contractId === undefined) qs.contractId = target.contractId;
+    if (target.groupId && qs.groupId === undefined) qs.groupId = target.groupId;
   }
   validateRequiredParameters(normalizedPath, qs);
   return transport.requestMethod(settings, normalizedPath, method, qs, body, clientFactory,

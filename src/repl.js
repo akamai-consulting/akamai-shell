@@ -19,8 +19,9 @@ const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
 const VARIABLE_PATTERN =
   /\$([A-Za-z_$][\w$]*(?:(?:\.[A-Za-z_$][\w$]*)|(?:\[(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\]]+)\]))*)/g;
+const TARGET_FIELDS = ['accountSwitchKey', 'contractId', 'groupId'];
 const CONFIG_NAMES = [
-  'edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId',
+  'edgerc', 'edgercSection', 'accountSwitchKey', 'target', 'contractId', 'groupId',
   'logLevel', 'logOutput', 'recordMode', 'parameterDefaults',
   ...QUERY_PARAMETER_NAMES
 ];
@@ -37,6 +38,40 @@ function parameterType(parameter) {
 
 function parameterDescription(parameter) {
   return parameter.description || 'No description documented.';
+}
+
+function normalizeTarget(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('config.target must be an object');
+  }
+  const target = {};
+  for (const field of TARGET_FIELDS) {
+    if (value[field] !== undefined && value[field] !== null) {
+      if (typeof value[field] !== 'string') {
+        throw new Error(`config.target.${field} must be a string`);
+      }
+      target[field] = value[field];
+    }
+  }
+  return target;
+}
+
+function targetFromParameters(parameters) {
+  const legacyTarget = {
+    accountSwitchKey: parameters.accountSwitchKey,
+    contractId: parameters.contractId,
+    groupId: parameters.groupId
+  };
+  const target = parameters.target === undefined
+    ? legacyTarget
+    : { accountSwitchKey: parameters.accountSwitchKey, ...parameters.target };
+  const normalized = normalizeTarget(target);
+  delete parameters.accountSwitchKey;
+  delete parameters.contractId;
+  delete parameters.groupId;
+  if (Object.keys(normalized).length) parameters.target = normalized;
+  else delete parameters.target;
+  return normalized;
 }
 
 function formatParameterHelp(method, apiPath, parameters, parameterName, assignment = '==') {
@@ -101,27 +136,34 @@ function addCompletionSeparator([candidates, partial], variables) {
 }
 
 const HELP = `Commands:
-  get <api-path>[?query=value]  Perform a read-only GET request
-      name==value ...            HTTPie-style query parameters
-  post [-f <path>] <api-path> [body args]
-                                Perform a POST request with a JSON body
-  put [-f <path>] <api-path> [body args]
-                                Perform a PUT request with a JSON body
-  post|put -v <expression> <api-path>
-                                Evaluate a JavaScript JSON body expression
-  get [-f <path>] <api-path>   Write the GET response to a file
-      name=value                 String JSON field
-      name:=value                JSON-typed field (number, boolean, object, array, or null)
-  echo <text>                    Print text with variable expansion
-  ! <shell command>              Run a local shell command
-  history                        Show command history
-  show [<expression>]             Show config, variables, or a selected value
-  help                           Show this help
-  ?                              Alias for help
-  record auto|on|off             Capture HTTP requests as JSONL
-  record show [--http]           Display captured request records
-  find <api-path> -q <query>    Find dictionaries in one API response
-  exit                           Exit the shell`;
+========
+Requests:
+  get <api-path> [name==value ...]     GET a resource
+  get -f <file> <api-path>             Save formatted GET JSON
+  post <api-path> [body ...]           POST a JSON body
+  put <api-path> [body ...]            PUT a JSON body
+  post|put -v <expression> <api-path>  Use a JavaScript value as the body
+  post|put -f <file> <api-path>        Read the JSON body from a file
+
+  Query fields use name==value.
+  Body fields use name=value (string) or name:=value (JSON).
+
+Data and shell:
+  find <api-path> -q <rule>            Find matching dictionaries in one GET
+  show [<expression>]                  Show variables or one JSON value
+  echo <text> [| command]              Print or pipe expanded text
+  ! <shell command>                    Run a local shell command
+
+Session:
+  config.<name> = <value>              Change a session setting
+  record auto|on|off                   Control HTTP recording
+  record show [--http]                Display captured records
+  history                              Show command history
+  help, ?                              Show this help
+  exit, quit                           Exit the shell
+
+Other input is evaluated as JavaScript. Press Tab for command and API
+completion.`;
 
 function expandHome(value) {
   return value === '~' ? os.homedir() : value.startsWith('~/')
@@ -683,10 +725,12 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   const parameterFile = historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env');
   const environment = loadEnvironment(parameterFile);
   const parameterDefaults = environment.parameters;
+  const target = targetFromParameters(parameterDefaults);
   const settingsTarget = {
     edgerc: parameterDefaults.edgerc || `${os.homedir()}/.edgerc`,
     edgercSection: parameterDefaults.edgercSection || 'default',
     accountSwitchKey: '',
+    target,
     contractId: '',
     groupId: '',
     logLevel: LEVELS.includes(parameterDefaults.logLevel) ? parameterDefaults.logLevel : 'info',
@@ -695,7 +739,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       ? parameterDefaults.recordMode : 'auto',
     parameterDefaults,
     ...Object.fromEntries(Object.entries(parameterDefaults)
-      .filter(([name]) => QUERY_PARAMETER_NAMES.has(name)))
+      .filter(([name]) => QUERY_PARAMETER_NAMES.has(name) &&
+        !TARGET_FIELDS.includes(name)))
   };
   const settings = new Proxy(settingsTarget, {
     set(target, property, value) {
@@ -712,10 +757,22 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       } else if (property === 'logOutput') {
         target.logger?.setOutput(normalizedValue);
       }
-      if (['edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId']
-        .includes(property)) {
-        const parameterName = property === 'edgercSection' ? 'edgercSection' : property;
-        target.parameterDefaults[parameterName] = target[property];
+      if (property === 'target') {
+        const normalizedTarget = normalizeTarget(value);
+        target.target = normalizedTarget;
+        for (const field of TARGET_FIELDS) target[field] = normalizedTarget[field] || '';
+        target.parameterDefaults.target = normalizedTarget;
+        for (const field of TARGET_FIELDS) delete target.parameterDefaults[field];
+      } else if (['edgerc', 'edgercSection'].includes(property)) {
+        target.parameterDefaults[property] = target[property];
+      } else if (TARGET_FIELDS.includes(property)) {
+        target.target = normalizeTarget({
+          ...target.target,
+          [property]: target[property] || undefined
+        });
+        if (Object.keys(target.target).length) target.parameterDefaults.target = target.target;
+        else delete target.parameterDefaults.target;
+        for (const field of TARGET_FIELDS) delete target.parameterDefaults[field];
       } else if (QUERY_PARAMETER_NAMES.has(property)) {
         target.parameterDefaults[property] = target[property];
       }
@@ -729,11 +786,21 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       if (typeof property === 'string' && !CONFIG_NAMES.includes(property)) {
         throw new Error(`Unknown config property "${property}"`);
       }
-      if (['edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId']
-        .includes(property)) {
-        target[property] = ['accountSwitchKey', 'contractId', 'groupId'].includes(property)
-          ? '' : undefined;
+      if (['edgerc', 'edgercSection'].includes(property)) {
+        target[property] = undefined;
         delete target.parameterDefaults[property];
+        return true;
+      }
+      if (property === 'target' || TARGET_FIELDS.includes(property)) {
+        if (property === 'target') target.target = {};
+        else {
+          target.target = { ...target.target };
+          delete target.target[property];
+        }
+        for (const field of TARGET_FIELDS) target[field] = target.target[field] || '';
+        if (Object.keys(target.target).length) target.parameterDefaults.target = target.target;
+        else delete target.parameterDefaults.target;
+        for (const field of TARGET_FIELDS) delete target.parameterDefaults[field];
         return true;
       }
       if (QUERY_PARAMETER_NAMES.has(property)) delete target.parameterDefaults[property];
@@ -758,9 +825,16 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     enumerable: false,
     writable: true
   });
-  settingsTarget.accountSwitchKey = settingsTarget.parameterDefaults.accountSwitchKey || '';
-  settingsTarget.contractId = settingsTarget.parameterDefaults.contractId || '';
-  settingsTarget.groupId = settingsTarget.parameterDefaults.groupId || '';
+  settingsTarget.accountSwitchKey = target.accountSwitchKey || '';
+  settingsTarget.contractId = target.contractId || '';
+  settingsTarget.groupId = target.groupId || '';
+  Object.defineProperties(settingsTarget, {
+    accountSwitchKey: {
+      value: settingsTarget.accountSwitchKey, writable: true, enumerable: false, configurable: true
+    },
+    contractId: { value: settingsTarget.contractId, writable: true, enumerable: false, configurable: true },
+    groupId: { value: settingsTarget.groupId, writable: true, enumerable: false, configurable: true }
+  });
   const variables = { ...environment.variables };
   delete variables.config;
   Object.defineProperty(variables, 'config', {
@@ -839,14 +913,17 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
 
   function applyParameterDefaults(defaults) {
     for (const name of QUERY_PARAMETER_NAMES) delete settingsTarget[name];
+    const nextTarget = targetFromParameters(defaults);
     settingsTarget.parameterDefaults = defaults;
     settingsTarget.edgerc = defaults.edgerc || `${os.homedir()}/.edgerc`;
     settingsTarget.edgercSection = defaults.edgercSection || 'default';
     settingsTarget.accountSwitchKey = defaults.accountSwitchKey || '';
-    settingsTarget.contractId = defaults.contractId || '';
-    settingsTarget.groupId = defaults.groupId || '';
+    settingsTarget.target = nextTarget;
+    settingsTarget.contractId = nextTarget.contractId || '';
+    settingsTarget.groupId = nextTarget.groupId || '';
     Object.assign(settingsTarget, Object.fromEntries(Object.entries(defaults)
-      .filter(([name]) => QUERY_PARAMETER_NAMES.has(name))));
+      .filter(([name]) => QUERY_PARAMETER_NAMES.has(name) &&
+        !TARGET_FIELDS.includes(name))));
   }
 
   async function execute(line) {

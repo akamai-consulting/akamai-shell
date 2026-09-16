@@ -62,8 +62,9 @@ async function requestMethod(settings, apiPath, method, query = {}, body,
   const normalizedMethod = String(method || '').toUpperCase();
   if (!normalizedMethod) throw new Error('HTTP method is required');
   const qs = { ...(settings.parameterDefaults || {}), ...query };
-  if (settings.accountSwitchKey && qs.accountSwitchKey === undefined) {
-    qs.accountSwitchKey = settings.accountSwitchKey;
+  const target = settings.target || settings;
+  if (target.accountSwitchKey && qs.accountSwitchKey === undefined) {
+    qs.accountSwitchKey = target.accountSwitchKey;
   }
   const requestHeaders = { ...headers };
   if (body !== undefined && requestHeaders['Content-Type'] === undefined &&
