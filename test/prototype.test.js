@@ -373,6 +373,38 @@ test('preserves HTTPie-style Cloudlets policy version POST arguments', async () 
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('keeps quoted JSON arrays typed for Cloudlets v2 POST bodies', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-cloudlets-v2-post-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query, body, method) => {
+    requests.push({ requestPath, query, body, method });
+    return { body: { accepted: true } };
+  }, path.join(directory, 'history'));
+
+  await repl.execute(
+    "post /cloudlets/api/v2/policies/371982/versions " +
+    "policyId:=371982 description=test matchRules:='[]' matchRulesFormat=1.0"
+  );
+  assert.deepEqual(requests[0], {
+    requestPath: '/policies/371982/versions',
+    query: {},
+    body: {
+      policyId: 371982,
+      description: 'test',
+      matchRules: [],
+      matchRulesFormat: '1.0'
+    },
+    method: 'POST'
+  });
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('tokenizes quoted shell values', () => {
   assert.deepEqual(tokenize('set edgerc "~/.edgerc"'), ['set', 'edgerc', '~/.edgerc']);
 });
