@@ -685,6 +685,27 @@ test('defines, expands, lists, and unsets custom variables', async () => {
   output.on('data', (chunk) => {
     printed += chunk.toString();
   });
+
+  test('exposes live shell configuration through config without merging user variables', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-config-'));
+    const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+    await repl.execute('config.contractId = "ctr_js"');
+    await repl.execute('foo = 123');
+    assert.equal(repl.settings.contractId, 'ctr_js');
+    assert.equal(repl.variables.foo, 123);
+    assert.equal(repl.variables.config.foo, undefined);
+    assert.throws(() => {
+      repl.variables.config.foo = 456;
+    }, /Unknown config property/);
+
+    repl.rl.close();
+    input.destroy();
+    output.destroy();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
   const repl = createRepl(output, input, undefined, historyPath);
 
   await repl.execute('set foo bar baz');

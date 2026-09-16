@@ -52,6 +52,10 @@ Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
 - Shell variables support `$name`, property, and index expansion (for example
   `$foo["items"][0]`); command-line expansion uses the variable's JSON
   serialization (so a string includes its JSON quotes).
+- Runtime configuration is available as the reserved `config` object from
+  JavaScript and command interpolation, for example
+  `config.contractId = "ctr_123"` and `$config["contractId"]`. User-defined
+  variables remain top-level and are not merged into `config`.
 - Lines that are not recognized as shell commands are evaluated as JavaScript,
   allowing snippets such as `[1,2,3].forEach(v => console.log(v))`; shell
   commands retain precedence. JavaScript `console.log`, `info`, `warn`, and

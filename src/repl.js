@@ -26,6 +26,10 @@ const HISTORY_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'history
 const ENV_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'env');
 const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
+const CONFIG_NAMES = [
+  'edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId',
+  'logLevel', 'logOutput', 'recordMode', 'parameterDefaults'
+];
 const COMMANDS = [
   'get', 'post', 'put', 'set', 'unset', 'save', 'load', 'show', 'history',
   'echo', 'record', 'help', '?', 'exit', 'quit'
@@ -484,7 +488,9 @@ function loadEnvironment(filePath) {
 }
 
 function saveEnvironment(filePath, parameters, variables) {
-  saveParameterDefaults(filePath, { parameters, variables });
+  const userVariables = { ...variables };
+  delete userVariables.config;
+  saveParameterDefaults(filePath, { parameters, variables: userVariables });
 }
 
 function runShellCommand(command, input, output) {
@@ -529,7 +535,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   const parameterFile = historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env');
   const environment = loadEnvironment(parameterFile);
   const parameterDefaults = environment.parameters;
-  const settings = {
+  const settingsTarget = {
     edgerc: parameterDefaults.edgerc || `${os.homedir()}/.edgerc`,
     edgercSection: parameterDefaults.edgercSection || 'default',
     accountSwitchKey: '',
@@ -540,15 +546,59 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     recordMode: 'off',
     parameterDefaults
   };
+  const settings = new Proxy(settingsTarget, {
+    set(target, property, value) {
+      if (typeof property === 'string' && !CONFIG_NAMES.includes(property)) {
+        throw new Error(`Unknown config property "${property}"`);
+      }
+      target[property] = value;
+      if (property === 'logLevel') {
+        target[property] = LEVELS.includes(value) ? value : 'info';
+        target.logger?.setLevel(target[property]);
+      } else if (property === 'logOutput') {
+        target.logger?.setOutput(value);
+      }
+      if (['edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId']
+        .includes(property)) {
+        const parameterName = property === 'edgercSection' ? 'edgercSection' : property;
+        target.parameterDefaults[parameterName] = value;
+      }
+      return true;
+    },
+    deleteProperty(target, property) {
+      if (typeof property === 'string' && !CONFIG_NAMES.includes(property)) {
+        throw new Error(`Unknown config property "${property}"`);
+      }
+      if (['edgerc', 'edgercSection', 'accountSwitchKey', 'contractId', 'groupId']
+        .includes(property)) {
+        target[property] = ['accountSwitchKey', 'contractId', 'groupId'].includes(property)
+          ? '' : undefined;
+        delete target.parameterDefaults[property];
+        return true;
+      }
+      return delete target[property];
+    }
+  });
   Object.defineProperty(settings, 'logger', {
     value: createLogger(),
     enumerable: false,
     writable: false
   });
-  settings.accountSwitchKey = settings.parameterDefaults.accountSwitchKey || '';
-  settings.contractId = settings.parameterDefaults.contractId || '';
-  settings.groupId = settings.parameterDefaults.groupId || '';
+  Object.defineProperty(settingsTarget, 'parameterDefaults', {
+    value: parameterDefaults,
+    enumerable: false,
+    writable: true
+  });
+  settingsTarget.accountSwitchKey = settingsTarget.parameterDefaults.accountSwitchKey || '';
+  settingsTarget.contractId = settingsTarget.parameterDefaults.contractId || '';
+  settingsTarget.groupId = settingsTarget.parameterDefaults.groupId || '';
   const variables = { ...environment.variables };
+  delete variables.config;
+  Object.defineProperty(variables, 'config', {
+    value: settings,
+    enumerable: true,
+    writable: false
+  });
   const writeConsole = (...values) => {
     output.write(`${values.map((value) => typeof value === 'string'
       ? value
@@ -602,12 +652,12 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   function applyParameterDefaults(defaults) {
-    settings.parameterDefaults = defaults;
-    settings.edgerc = defaults.edgerc || `${os.homedir()}/.edgerc`;
-    settings.edgercSection = defaults.edgercSection || 'default';
-    settings.accountSwitchKey = defaults.accountSwitchKey || '';
-    settings.contractId = defaults.contractId || '';
-    settings.groupId = defaults.groupId || '';
+    settingsTarget.parameterDefaults = defaults;
+    settingsTarget.edgerc = defaults.edgerc || `${os.homedir()}/.edgerc`;
+    settingsTarget.edgercSection = defaults.edgercSection || 'default';
+    settingsTarget.accountSwitchKey = defaults.accountSwitchKey || '';
+    settingsTarget.contractId = defaults.contractId || '';
+    settingsTarget.groupId = defaults.groupId || '';
   }
 
   async function execute(line) {
@@ -678,8 +728,12 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       } else {
         const loaded = loadEnvironment(filePath);
         applyParameterDefaults(loaded.parameters);
-        Object.keys(variables).forEach((name) => delete variables[name]);
-        Object.assign(variables, loaded.variables);
+        Object.keys(variables).forEach((name) => {
+          if (name !== 'config') delete variables[name];
+        });
+        Object.entries(loaded.variables).forEach(([name, value]) => {
+          if (name !== 'config') variables[name] = value;
+        });
         cache.clear();
       }
       return true;
