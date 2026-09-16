@@ -315,6 +315,28 @@ function extractValueOption(tokens, method) {
   return { remaining, expression };
 }
 
+function completeVariableProperties(line, variables) {
+  const match = line.match(/^(.*)\[([^\]]*)$/);
+  if (!match) return null;
+  const [, base, keyPartial] = match;
+  if (!/^(?:[A-Za-z_$][\w$]*|\S+\])/.test(base)) return null;
+  let value;
+  try {
+    value = vm.runInNewContext(base, variables);
+  } catch {
+    return [[], line];
+  }
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
+    return [[], line];
+  }
+  const partial = keyPartial.replace(/^['"]/, '');
+  const keys = Object.keys(value)
+    .filter((key) => !Array.isArray(value) || /^\d+$/.test(key))
+    .filter((key) => key.startsWith(partial))
+    .map((key) => `${base}[${Array.isArray(value) ? key : JSON.stringify(key)}]`);
+  return [sortCandidates(keys), line];
+}
+
 function splitPipeline(line) {
   let quote = '';
   for (let index = 0; index < line.length; index += 1) {
@@ -753,6 +775,8 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   async function complete(line) {
+    const variableCompletion = completeVariableProperties(line, variables);
+    if (variableCompletion) return variableCompletion;
     if (/^\S*$/.test(line)) {
       return [sortCandidates(COMMANDS.filter((command) => command.startsWith(line))), line];
     }

@@ -242,6 +242,28 @@ test('completes command names', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('completes JavaScript object keys and array indices', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  await repl.execute('foo = {"aaa":[10,20],"bbb":"hoge"}');
+  assert.deepEqual(await repl.complete('foo['), [
+    ['foo["aaa"]', 'foo["bbb"]'],
+    'foo['
+  ]);
+  assert.deepEqual(await repl.complete('foo["aaa"]['), [
+    ['foo["aaa"][0]', 'foo["aaa"][1]'],
+    'foo["aaa"]['
+  ]);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('supports the question-mark help alias and JavaScript fallback', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
