@@ -671,10 +671,6 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     if (!tokens.length) return true;
     const command = tokens.shift().toLowerCase();
     settings.logger.debug('Command received', { command });
-    if (pipeline !== null && command !== 'get') {
-      throw new Error('Pipelines are supported only after get commands; post and put do not support pipelines');
-    }
-
     if (command === 'exit' || command === 'quit') return false;
     if (command === 'help' || command === '?') {
       output.write(`${HELP}\n`);
