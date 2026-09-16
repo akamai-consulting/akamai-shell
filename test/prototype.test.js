@@ -99,6 +99,33 @@ test('supports string body fields with key=value for PUT', () => {
   });
 });
 
+test('evaluates JavaScript variables and passes JSON bodies with -v', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath, query, body, method) => {
+    requests.push({ requestPath, query, body, method });
+    return { body: { accepted: true } };
+  }, path.join(directory, 'history'));
+
+  await repl.execute('foo = {"aaa":[1,2,3]}');
+  await repl.execute('foo["bbb"] = 1234');
+  await repl.execute('delete foo["aaa"]');
+  await repl.execute('post -v foo /edge-diagnostics/v1/curl');
+
+  assert.deepEqual(requests[0], {
+    requestPath: '/curl',
+    query: {},
+    body: { bbb: 1234 },
+    method: 'POST'
+  });
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('adds a separator only after a complete completion candidate', () => {
   assert.deepEqual(addCompletionSeparator([['/properties'], '/prop']), [
     ['/properties '], '/prop'

@@ -50,6 +50,10 @@ Supported commands include `get`, `post`, `put`, `set`, `unset`, `save`, `load`,
 `show`, `history`, `echo`, `help`, `exit`, and `quit`.
 
 - Shell variables support `$name` expansion.
+- The experimental JavaScript session scope accepts trusted statements such as
+  `foo = {"items":[]}`, `foo["name"] = "value"`, and `delete foo["items"]`.
+  POST and PUT also accept `-v <expression>` to use a JSON-serializable session
+  value as the complete request body; `-v` cannot be combined with `-f`.
 - `post` and `put` accept HTTPie-like JSON body fields: `name=value` creates a
   string and `name:=value` parses JSON. Query parameters remain available in
   the path or as `name==value` arguments. Writes require a body and do not

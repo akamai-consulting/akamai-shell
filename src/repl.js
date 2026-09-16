@@ -5,6 +5,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const vm = require('vm');
 const { get: papiGet } = require('./papi-client');
 const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
@@ -101,6 +102,8 @@ const HELP = `Commands:
                                 Perform a POST request with a JSON body
   put [-f <path>] <api-path> [body args]
                                 Perform a PUT request with a JSON body
+  post|put -v <expression> <api-path>
+                                Evaluate a JavaScript JSON body expression
   get [-f <path>] <api-path>   Write the GET response to a file
       name=value                 String JSON field
       name:=value                JSON-typed field (number, boolean, object, array, or null)
@@ -248,6 +251,39 @@ function parseWriteArguments(tokens, method = 'POST') {
     throw new Error(`${method.toUpperCase()} requires at least one body argument`);
   }
   return { ...request, body };
+}
+
+function evaluateJavaScript(expression, variables) {
+  const value = vm.runInNewContext(expression, variables);
+  if (value === undefined) throw new Error('JavaScript expression must produce a JSON value');
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) throw new Error('value is undefined');
+    return JSON.parse(serialized);
+  } catch (error) {
+    throw new Error(`JavaScript value is not JSON-serializable: ${error.message}`, { cause: error });
+  }
+}
+
+function isJavaScriptStatement(line) {
+  return /^\s*(?:[A-Za-z_$][\w$]*\s*(?:=|[[(])|delete\s+)/.test(line);
+}
+
+function extractValueOption(tokens, method) {
+  const remaining = [];
+  let expression;
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] !== '-v') {
+      remaining.push(tokens[index]);
+      continue;
+    }
+    if (expression !== undefined || tokens[index + 1] === undefined) {
+      throw new Error(`Usage: ${method.toLowerCase()} [-v <expression>] <api-path>`);
+    }
+    expression = tokens[index + 1];
+    index += 1;
+  }
+  return { remaining, expression };
 }
 
 function splitPipeline(line) {
@@ -450,6 +486,10 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       await runShellCommand(shellCommand, '', output);
       return true;
     }
+    if (isJavaScriptStatement(line)) {
+      evaluateJavaScript(line, variables);
+      return true;
+    }
     const [commandLine, pipeline] = splitPipeline(line);
     const tokens = tokenize(commandLine);
     if (!tokens.length) return true;
@@ -606,12 +646,15 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     const expandVariable = (value) =>
       value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, variable) => variables[variable] ?? '');
     const fileOption = extractFileOption(tokens, command);
+    const valueOption = command === 'get'
+      ? { remaining: fileOption.remaining, expression: undefined }
+      : extractValueOption(fileOption.remaining, command);
     const requestTokens = command === 'get'
-      ? fileOption.remaining
-      : fileOption.remaining.map(expandVariable);
+      ? valueOption.remaining
+      : valueOption.remaining.map(expandVariable);
     const request = command === 'get'
       ? parseGetArguments(requestTokens)
-      : fileOption.filePath === undefined
+      : fileOption.filePath === undefined && valueOption.expression === undefined
         ? parseWriteArguments(requestTokens, command.toUpperCase())
         : parseGetArguments(requestTokens);
     if (command !== 'get' && fileOption.filePath !== undefined) {
@@ -622,6 +665,12 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
           cause: error
         });
       }
+    }
+    if (command !== 'get' && valueOption.expression !== undefined) {
+      if (fileOption.filePath !== undefined) {
+        throw new Error('The -v option cannot be combined with -f');
+      }
+      request.body = evaluateJavaScript(valueOption.expression, variables);
     }
     request.query = Object.fromEntries(Object.entries(request.query).map(([name, value]) => [
       name,
