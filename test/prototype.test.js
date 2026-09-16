@@ -284,6 +284,7 @@ test('completes variable references throughout command lines', async () => {
   const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
 
   await repl.execute('foo = {"activations":[{"id":1}],"status":"active"}');
+  assert.deepEqual(await repl.complete('fo'), [['foo'], 'fo']);
   assert.deepEqual(await repl.complete('echo $fo'), [['$foo'], '$fo']);
   assert.deepEqual(await repl.complete('get /path/$fo'), [['$foo'], '$fo']);
   assert.deepEqual(await repl.complete('echo $foo["act'), [

@@ -829,6 +829,13 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   async function complete(line) {
+    if (/^[A-Za-z_$][\w$]*$/.test(line)) {
+      const candidates = [
+        ...COMMANDS.filter((command) => command.startsWith(line)),
+        ...Object.keys(variables).filter((name) => name.startsWith(line))
+      ];
+      return [sortCandidates([...new Set(candidates)]), line];
+    }
     const variableReference = completeVariableReference(line, variables);
     if (variableReference) return variableReference;
     const variableCompletion = completeVariableProperties(line, variables);
