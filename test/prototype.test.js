@@ -860,6 +860,37 @@ test('pipes POST responses to shell commands', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('pipes recorded HTTP output to shell commands', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-record-pipeline-'));
+  const repl = createRepl(output, input, async () => ({
+    body: { accepted: true }
+  }), path.join(directory, 'history'));
+
+  await repl.execute('record on');
+  output.read();
+  const entry = repl.settings.recorder.begin({
+    method: 'GET',
+    path: '/example',
+    headers: {}
+  });
+  repl.settings.recorder.complete(entry, {
+    statusCode: 200,
+    headers: {},
+    body: { ok: true }
+  });
+  await repl.execute('record show --http | head -5');
+  const lines = output.read().toString().trim().split('\n');
+  assert(lines.length <= 5);
+  assert(lines.length > 0);
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('pipes echo output to shell commands', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
