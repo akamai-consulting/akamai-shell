@@ -610,6 +610,24 @@ test('completes partial resource paths for write commands', async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('completes operation-specific POST body parameters', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-body-completion-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  const [candidates, partial] = await repl.complete(
+    'post /papi/v1/properties/prp_366150/versions create'
+  );
+  assert.equal(partial, 'create');
+  assert(candidates.includes('createFromVersion:='));
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('stays silent when a write path has no completion candidates', async () => {
   const input = new PassThrough();
   const output = new PassThrough();

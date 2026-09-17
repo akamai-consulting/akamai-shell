@@ -1220,10 +1220,16 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const token = optionMatch[2];
       return [sortCandidates(['-f'].filter((option) => option.startsWith(token))), token];
     }
-    const queryMatch = line.match(/^(get|post|put)\s+\S+\s+(\S*)$/);
+    const queryMatch = line.match(/^(get|post|put)\s+(\S+)\s+(\S*)$/);
     if (queryMatch) {
-      const token = queryMatch[2];
-      return [sortCandidates(QUERY_PARAMETER_CANDIDATES.filter((candidate) => candidate.startsWith(token))), token];
+      const [, method, pathToken, token] = queryMatch;
+      const inputPath = expandCompletionPath(pathToken, variables);
+      if (inputPath === null) return [[], token];
+      const parameters = apiRegistry.parameterHelp(method.toUpperCase(), inputPath);
+      const candidates = parameters.length
+        ? parameters.map((parameter) => `${parameter.name}${parameter.in === 'body' ? ':=' : '=='}`)
+        : QUERY_PARAMETER_CANDIDATES;
+      return [sortCandidates(candidates.filter((candidate) => candidate.startsWith(token))), token];
     }
     const match = line.match(/^(get|post|put|find)\s+(\S*)$/);
     if (!match) return [[], line];
