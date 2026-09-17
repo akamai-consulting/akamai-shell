@@ -99,7 +99,7 @@ never displayed or persisted by the shell.
 | `find <api-path> -q <rule>` | Fetch one response and find matching dictionaries locally. |
 | `show [expression]` | Display the session namespace or one JSON value. |
 | `echo <text> [\| command]` | Print expanded text, optionally through a local shell pipeline. |
-| `record auto\|on\|off` | Control redacted in-memory request recording. |
+| `record auto\|on\|off` | Control redacted in-memory request recording; `auto` keeps the latest request only. |
 | `record show [--http]` | Display captured JSONL or HTTP-style records. |
 | `history` | Display command history. |
 | `help` / `?` | Display command help. |

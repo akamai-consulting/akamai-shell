@@ -32,6 +32,7 @@ function createRecorder() {
       if (!['auto', 'on', 'off'].includes(nextMode)) {
         throw new Error('Record mode must be auto, on, or off');
       }
+      if (nextMode === 'auto' && mode !== 'auto') records.length = 0;
       mode = nextMode;
     },
     begin(request) {
@@ -53,8 +54,8 @@ function createRecorder() {
       });
       entry.durationMs = Date.now() - entry.startedAt;
       delete entry.startedAt;
+      if (mode === 'auto') records.length = 0;
       records.push(entry);
-      if (mode === 'auto') mode = 'off';
     },
     jsonl() {
       return records.map(json).join('\n');

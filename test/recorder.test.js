@@ -4,25 +4,37 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createRecorder } = require('../src/recorder');
 
-test('captures one request in auto mode and then stops', () => {
+test('keeps only the most recent request in auto mode', () => {
   const recorder = createRecorder();
   recorder.setMode('auto');
-  const entry = recorder.begin({
+  const first = recorder.begin({
     method: 'GET',
     path: '/papi/v1/properties',
     headers: { Authorization: 'secret' },
     qs: {},
   });
-  recorder.complete(entry, {
+  recorder.complete(first, {
     statusCode: 200,
     headers: { 'content-type': 'application/json' },
     body: { properties: [] }
   });
 
-  assert.equal(recorder.mode, 'off');
+  const second = recorder.begin({
+    method: 'GET',
+    path: '/papi/v1/groups',
+    headers: {},
+    qs: {}
+  });
+  recorder.complete(second, {
+    statusCode: 200,
+    headers: {},
+    body: { groups: [] }
+  });
+
+  assert.equal(recorder.mode, 'auto');
   assert.equal(recorder.records.length, 1);
   const record = JSON.parse(recorder.jsonl());
-  assert.equal(record.request.headers.Authorization, '[REDACTED]');
+  assert.equal(record.request.path, '/papi/v1/groups');
   assert.equal(record.response.statusCode, 200);
 });
 

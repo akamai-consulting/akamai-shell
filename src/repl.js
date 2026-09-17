@@ -867,6 +867,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       if (['logLevel', 'logOutput', 'recordMode'].includes(property)) {
         target.parameterDefaults[property] = target[property];
       }
+      if (property === 'recordMode') target.recorder?.setMode(target.recordMode);
       if (typeof persistParameters === 'function') persistParameters();
       return true;
     },
@@ -895,6 +896,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       if (property === 'logLevel') target.logLevel = 'info';
       if (property === 'logOutput') target.logOutput = 'stderr';
       if (property === 'recordMode') target.recordMode = 'auto';
+      if (property === 'recordMode') target.recorder?.setMode(target.recordMode);
       if (['logLevel', 'logOutput', 'recordMode'].includes(property)) {
         delete target.parameterDefaults[property];
       }
@@ -1034,12 +1036,20 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       ? expandTokenizedArguments(commandLine, variables, requestCommand)
       : tokenize(expandVariables(commandLine, variables));
     const expandedPipeline = pipeline === null ? null : expandVariables(pipeline, variables);
+    const writeCommandResult = async (content) => {
+      if (expandedPipeline !== null) {
+        if (!expandedPipeline) throw new Error('Pipeline command cannot be empty');
+        await runShellCommand(expandedPipeline, content, commandOutput);
+      } else {
+        commandOutput.write(content);
+      }
+    };
     if (!tokens.length) return true;
     const command = tokens.shift().toLowerCase();
     settings.logger.debug('Command received', { command });
     if (command === 'exit' || command === 'quit') return false;
     if (command === 'help' || command === '?') {
-      commandOutput.write(`${HELP}\n`);
+      await writeCommandResult(`${HELP}\n`);
       return true;
     }
     if (command === 'show') {
@@ -1086,7 +1096,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     }
     if (command === 'history') {
       const history = formatHistory(rl.history);
-      if (history) commandOutput.write(`${history}\n`);
+      if (history) await writeCommandResult(`${history}\n`);
       return true;
     }
     if (command === 'record') {
@@ -1096,7 +1106,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
           throw new Error('Usage: record show [--http]');
         }
         const content = tokens[0] === '--http' ? recorder.http() : recorder.jsonl();
-        if (content) commandOutput.write(`${content}\n`);
+        if (content) await writeCommandResult(`${content}\n`);
         return true;
       }
       if (tokens.length || !['auto', 'on', 'off'].includes(action)) {
