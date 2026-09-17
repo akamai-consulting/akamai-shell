@@ -7,6 +7,8 @@ paths and methods are validated from the checked-in OpenAPI documents, and
 responses can be inspected, transformed, stored in variables, and reused in
 later requests.
 
+![Akamai Shell terminal demo](doc/asset/demo-ttyrec.gif)
+
 It is useful when you need to:
 
 - Explore Akamai resources interactively without writing a client program.
