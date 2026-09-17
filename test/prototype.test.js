@@ -442,6 +442,7 @@ test('completes variable references throughout command lines', async () => {
   const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
 
   await repl.execute('foo = {"activations":[{"id":1}],"status":"active"}');
+  await repl.execute('p0 = "/papi/v1"');
   assert.deepEqual(await repl.complete('fo'), [['foo'], 'fo']);
   assert.deepEqual(await repl.complete('show fo'), [['foo'], 'fo']);
   assert.deepEqual(await repl.complete('show foo["act'), [
@@ -454,6 +455,13 @@ test('completes variable references throughout command lines', async () => {
   ]);
   assert.deepEqual(await repl.complete('echo $fo'), [['$foo'], '$fo']);
   assert.deepEqual(await repl.complete('get /path/$fo'), [['$foo'], '$fo']);
+  assert.deepEqual(await repl.complete('get $p0/prop'), [
+    ['$p0/properties'],
+    '$p0/prop'
+  ]);
+  const [variableCandidates, variablePartial] = await repl.complete('get $p0/');
+  assert.equal(variablePartial, '$p0/');
+  assert(variableCandidates.includes('$p0/properties'));
   assert.deepEqual(await repl.complete('echo $foo["act'), [
     ['$foo["activations"]'],
     '$foo["act'

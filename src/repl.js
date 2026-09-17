@@ -426,6 +426,29 @@ function expandVariables(value, variables) {
   );
 }
 
+function expandCompletionPath(value, variables) {
+  let unresolved = false;
+  const expanded = value.replace(VARIABLE_PATTERN, (match, expression) => {
+    const variable = expression.match(/^[A-Za-z_$][\w$]*/)[0];
+    if (!Object.prototype.hasOwnProperty.call(variables, variable)) {
+      unresolved = true;
+      return match;
+    }
+    try {
+      const resolved = vm.runInNewContext(expression, variables);
+      if (resolved === null || (typeof resolved !== 'string' && typeof resolved !== 'number')) {
+        unresolved = true;
+        return match;
+      }
+      return String(resolved);
+    } catch {
+      unresolved = true;
+      return match;
+    }
+  });
+  return unresolved ? null : expanded;
+}
+
 function expandTokenizedArguments(value, variables, rawStrings = false) {
   const replacements = new Map();
   const protectedValue = value.replace(VARIABLE_PATTERN, (match) => {
@@ -1194,25 +1217,46 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     }
     const match = line.match(/^(get|post|put|find)\s+(\S*)$/);
     if (!match) return [[], line];
-    const inputPath = match[2] || '/';
-    const result = await apiRegistry.completeMethod(
+    const pathToken = match[2] || '/';
+    const inputPath = expandCompletionPath(pathToken, variables);
+    if (inputPath === null) return [[], pathToken];
+    const [candidates] = await apiRegistry.completeMethod(
       match[1].toUpperCase(), inputPath, settings, cache, requestGet
     );
-    return result;
+    const variableMatch = pathToken.match(VARIABLE_PATTERN);
+    const variableIndex = variableMatch ? pathToken.indexOf(variableMatch[0]) : -1;
+    const mappedCandidates = candidates.map((candidate) => {
+      if (!candidate.startsWith(inputPath)) return candidate;
+      const variablePath = variableMatch
+        ? expandCompletionPath(variableMatch[0], variables)
+        : null;
+      if (variablePath !== null &&
+          candidate.startsWith(variablePath) &&
+          (candidate === variablePath || candidate[variablePath.length] === '/')) {
+        return `${pathToken.slice(0, variableIndex)}${variableMatch[0]}${candidate.slice(variablePath.length)}`;
+      }
+      if (candidate === inputPath || inputPath.endsWith('/') || candidate[inputPath.length] === '/') {
+        return `${pathToken}${candidate.slice(inputPath.length)}`;
+      }
+      return candidate;
+    });
+    return [mappedCandidates, pathToken];
   }
 
   async function showParameterHelp(line) {
     const match = line.match(/^(get|post|put)\s+(\S+)\s+(\S*)$/) ||
       line.match(/^(get|post|put)\s+(\S+)\?$/);
     if (!match) return false;
-    const [, method, apiPath, token = '?'] = match;
+    const [, method, pathToken, token = '?'] = match;
     if (!token.endsWith('?')) return false;
+    const apiPath = expandCompletionPath(pathToken, variables);
+    if (apiPath === null) return false;
     const helpToken = token.slice(0, -1);
     const parameterName = helpToken === '' ? undefined : helpToken.replace(/(?:==|:=)$/, '');
     const assignment = helpToken.endsWith(':=') ? ':=' : '==';
     if (helpToken !== '' && !/^[A-Za-z0-9_-]+(?:==|:=)?$/.test(helpToken)) return false;
     const parameters = apiRegistry.parameterHelp(method.toUpperCase(), apiPath, parameterName);
-    const help = formatParameterHelp(method, apiPath, parameters, parameterName, assignment);
+    const help = formatParameterHelp(method, pathToken, parameters, parameterName, assignment);
     if (!help) return false;
     output.write(`\n${help}\n`);
     rl._refreshLine();
