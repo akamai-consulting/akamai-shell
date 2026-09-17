@@ -309,7 +309,7 @@ async function evaluateJavaScript(expression, variables, requireValue = true, ex
       variables[name] = await value;
     }
   }
-  const sourceExpression = expression.replace(/\$\s*\(/g, 'await $(');
+  const sourceExpression = awaitDollarCalls(expression);
   const source = expressionMode
     ? `(async () => (${sourceExpression}))()`
     : `(async () => { ${sourceExpression}\n})()`;
@@ -323,6 +323,61 @@ async function evaluateJavaScript(expression, variables, requireValue = true, ex
     return JSON.parse(serialized);
   } catch (error) {
     throw new Error(`JavaScript value is not JSON-serializable: ${error.message}`, { cause: error });
+  }
+
+  function awaitDollarCalls(source) {
+    let result = '';
+    let quote = '';
+    let escaped = false;
+    for (let index = 0; index < source.length; index += 1) {
+      const character = source[index];
+      if (quote) {
+        result += character;
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === quote) quote = '';
+        continue;
+      }
+      if (character === '"' || character === "'" || character === '`') {
+        quote = character;
+        result += character;
+        continue;
+      }
+      if (character !== '$') {
+        result += character;
+        continue;
+      }
+      let open = index + 1;
+      while (/\s/.test(source[open] || '')) open += 1;
+      if (source[open] !== '(') {
+        result += character;
+        continue;
+      }
+      let depth = 1;
+      let innerQuote = '';
+      let innerEscaped = false;
+      let close = open + 1;
+      for (; close < source.length && depth; close += 1) {
+        const innerCharacter = source[close];
+        if (innerQuote) {
+          if (innerEscaped) innerEscaped = false;
+          else if (innerCharacter === '\\') innerEscaped = true;
+          else if (innerCharacter === innerQuote) innerQuote = '';
+          continue;
+        }
+        if (innerCharacter === '"' || innerCharacter === "'" || innerCharacter === '`') {
+          innerQuote = innerCharacter;
+        } else if (innerCharacter === '(') {
+          depth += 1;
+        } else if (innerCharacter === ')') {
+          depth -= 1;
+        }
+      }
+      if (depth) throw new Error('Unterminated JavaScript $() expression');
+      result += `(await ${source.slice(index, close)})`;
+      index = close - 1;
+    }
+    return result;
   }
 }
 
@@ -371,11 +426,21 @@ function expandVariables(value, variables) {
   );
 }
 
-function expandTokenizedArguments(value, variables) {
+function expandTokenizedArguments(value, variables, rawStrings = false) {
   const replacements = new Map();
   const protectedValue = value.replace(VARIABLE_PATTERN, (match) => {
     const placeholder = `__akamai_variable_${replacements.size}__`;
-    replacements.set(placeholder, expandVariables(match, variables));
+    const serialized = expandVariables(match, variables);
+    let replacement = serialized;
+    if (rawStrings) {
+      try {
+        const parsed = JSON.parse(serialized);
+        if (typeof parsed === 'string') replacement = parsed;
+      } catch {
+        // Preserve unresolved variables for the normal expansion behavior.
+      }
+    }
+    replacements.set(placeholder, replacement);
     return placeholder;
   });
   return tokenize(protectedValue).map((token) => {
@@ -858,30 +923,17 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   });
   Object.defineProperty(variables, '$', {
     value: async (command) => {
-      const [commandLine, pipeline] = splitPipeline(command);
-      if (commandLine.trim().startsWith('!')) {
-        const shellCommand = commandLine.trim().slice(1).trim();
-        if (!shellCommand) throw new Error('Usage: $(! <shell command>)');
-        const output = await runShellCommandCapture(
-          expandVariables(shellCommand, variables), ''
-        );
-        return parsePipelineOutput(output);
-      }
-      const tokens = expandTokenizedArguments(commandLine, variables);
-      const method = tokens.shift()?.toLowerCase();
-      if (method !== 'get') {
-        throw new Error('JavaScript $() currently supports only the get command');
-      }
-      const request = parseGetArguments(tokens);
-      const response = await apiRegistry.get(settings, request.path, request.query, requestGet);
-      if (pipeline !== null) {
-        if (!pipeline) throw new Error('Pipeline command cannot be empty');
-        const output = await runShellCommandCapture(
-          expandVariables(pipeline, variables), `${bodyText(response.body)}\n`
-        );
-        return parsePipelineOutput(output);
-      }
-      return response.body;
+      let captured = '';
+      const commandOutput = {
+        write(value) {
+          captured += Buffer.isBuffer(value) ? value.toString() : String(value);
+        }
+      };
+      const execution = { output: commandOutput, valueMode: true };
+      const [, pipeline] = splitPipeline(command);
+      await execute(command, execution);
+      if (execution.value !== undefined && pipeline === null) return execution.value;
+      return captured ? parsePipelineOutput(captured) : undefined;
     },
     enumerable: false
   });
@@ -926,22 +978,24 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         !TARGET_FIELDS.includes(name))));
   }
 
-  async function execute(line) {
+  async function execute(line, execution = {}) {
+    const commandOutput = execution.output || output;
     const executeJavaScript = async (source) => {
       const value = await evaluateJavaScript(
         source, variables, false, isJavaScriptExpression(source), false
       );
       persistParameters();
-      if (value !== undefined) {
+      if (value !== undefined && !execution.valueMode) {
         const serialized = JSON.stringify(value);
-        if (serialized !== undefined) output.write(`${serialized}\n`);
+        if (serialized !== undefined) commandOutput.write(`${serialized}\n`);
       }
+      if (value !== undefined) execution.value = value;
     };
     const trimmedLine = line.trim();
     if (trimmedLine.startsWith('!')) {
       const shellCommand = trimmedLine.slice(1).trim();
       if (!shellCommand) throw new Error('Usage: ! <shell command>');
-      await runShellCommand(shellCommand, '', output);
+      await runShellCommand(shellCommand, '', commandOutput);
       return true;
     }
     if (isJavaScriptStatement(line)) {
@@ -954,7 +1008,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     const requestCommand = ['get', 'post', 'put'].includes(initialCommand);
     const tokenAwareCommand = requestCommand || initialCommand === 'echo';
     const tokens = tokenAwareCommand
-      ? expandTokenizedArguments(commandLine, variables)
+      ? expandTokenizedArguments(commandLine, variables, requestCommand)
       : tokenize(expandVariables(commandLine, variables));
     const expandedPipeline = pipeline === null ? null : expandVariables(pipeline, variables);
     if (!tokens.length) return true;
@@ -962,15 +1016,16 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     settings.logger.debug('Command received', { command });
     if (command === 'exit' || command === 'quit') return false;
     if (command === 'help' || command === '?') {
-      output.write(`${HELP}\n`);
+      commandOutput.write(`${HELP}\n`);
       return true;
     }
     if (command === 'show') {
       const expression = commandLine.slice(command.length).trim();
       if (!expression) {
         const rendered = `${JSON.stringify(variables, null, 2)}\n`;
-        if (expandedPipeline !== null) await runShellCommand(expandedPipeline, rendered, output);
-        else output.write(rendered);
+        if (expandedPipeline !== null) await runShellCommand(expandedPipeline, rendered, commandOutput);
+        else commandOutput.write(rendered);
+        execution.value = variables;
         return true;
       }
       let value;
@@ -991,23 +1046,24 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
         });
       }
       const renderedOutput = `${rendered}\n`;
-      if (expandedPipeline !== null) await runShellCommand(expandedPipeline, renderedOutput, output);
-      else output.write(renderedOutput);
+      if (expandedPipeline !== null) await runShellCommand(expandedPipeline, renderedOutput, commandOutput);
+      else commandOutput.write(renderedOutput);
+      execution.value = value;
       return true;
     }
     if (command === 'echo') {
       const echoOutput = `${tokens.join(' ')}\n`;
       if (expandedPipeline !== null) {
         if (!expandedPipeline) throw new Error('Pipeline command cannot be empty');
-        await runShellCommand(expandedPipeline, echoOutput, output);
+        await runShellCommand(expandedPipeline, echoOutput, commandOutput);
       } else {
-        output.write(echoOutput);
+        commandOutput.write(echoOutput);
       }
       return true;
     }
     if (command === 'history') {
       const history = formatHistory(rl.history);
-      if (history) output.write(`${history}\n`);
+      if (history) commandOutput.write(`${history}\n`);
       return true;
     }
     if (command === 'record') {
@@ -1017,7 +1073,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
           throw new Error('Usage: record show [--http]');
         }
         const content = tokens[0] === '--http' ? recorder.http() : recorder.jsonl();
-        if (content) output.write(`${content}\n`);
+        if (content) commandOutput.write(`${content}\n`);
         return true;
       }
       if (tokens.length || !['auto', 'on', 'off'].includes(action)) {
@@ -1031,8 +1087,9 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       const request = parseFindArguments(tokens);
       const matches = await findResources(settings, request.path, request.query, requestGet);
       const outputBody = JSON.stringify(matches, null, 2);
-      if (pipeline !== null) await runShellCommand(pipeline, `${outputBody}\n`, output);
-      else output.write(`${outputBody}\n`);
+      if (pipeline !== null) await runShellCommand(pipeline, `${outputBody}\n`, commandOutput);
+      else commandOutput.write(`${outputBody}\n`);
+      execution.value = matches;
       return true;
     }
     if (command !== 'get' && command !== 'post' && command !== 'put') {
@@ -1081,10 +1138,11 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     }
     if (expandedPipeline !== null) {
       if (!pipeline) throw new Error('Pipeline command cannot be empty');
-      await runShellCommand(expandedPipeline, `${outputBody}\n`, output);
+      await runShellCommand(expandedPipeline, `${outputBody}\n`, commandOutput);
     } else {
-      output.write(`${outputBody}\n`);
+      commandOutput.write(`${outputBody}\n`);
     }
+    execution.value = response.body;
     return true;
   }
 

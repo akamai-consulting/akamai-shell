@@ -164,6 +164,63 @@ test('calls Akamai get commands through the JavaScript $ function', async () => 
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('calls find commands through the JavaScript $ function', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-find-'));
+  const requests = [];
+  const repl = createRepl(output, input, async (settings, requestPath) => {
+    requests.push(requestPath);
+    if (requestPath === '/properties') {
+      return {
+        body: {
+          properties: {
+            items: [
+              { propertyId: 'prp_1', propertyName: 'other' },
+              { propertyId: 'prp_2', propertyName: 'tai-sample' }
+            ]
+          }
+        }
+      };
+    }
+    return { body: { propertyId: 'prp_2' } };
+  }, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute(`path = $('find /papi/v1/properties -q ~=~tai-sample')[0].path`);
+  assert.equal(repl.variables.path, '/papi/v1/properties/prp_2');
+  await repl.execute('get $path');
+  assert.deepEqual(requests, ['/properties', '/properties/prp_2']);
+  output.read();
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('dispatches non-request commands through the JavaScript $ function', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-javascript-dispatch-'));
+  const repl = createRepl(output, input, undefined, path.join(directory, 'history'));
+
+  output.read();
+  await repl.execute('helpText = $("help")');
+  await repl.execute('echoText = $("echo hello")');
+  await repl.execute('recordResult = $("record off")');
+
+  assert.match(repl.variables.helpText, /Requests:/);
+  assert.equal(repl.variables.echoText, 'hello\n');
+  assert.equal(repl.variables.recordResult, undefined);
+  assert.equal(repl.settings.recordMode, 'off');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('captures JavaScript $ helper pipeline output', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
