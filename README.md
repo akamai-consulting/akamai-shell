@@ -131,6 +131,42 @@ brace) exits with a non-zero status and a clear error. This multi-line
 joining currently applies only to script files, not the interactive shell,
 where each line is still executed as it is entered.
 
+JavaScript code (in scripts and interactively) can use the real Node.js
+`process` object and a `require()` function, just like a normal Node.js
+script:
+
+```bash
+#!/usr/bin/env akamai-shell
+os = require('os')
+show os.hostname()
+show process.argv
+```
+
+Arguments after the script path are available through `process.argv`, using
+the usual Node.js layout: `process.argv[0]` is the Node executable,
+`process.argv[1]` is the script path, and `process.argv[2]` onward contain
+the arguments passed to the script:
+
+```bash
+akamai-shell script.as foo bar
+# process.argv[2] === "foo"
+# process.argv[3] === "bar"
+```
+
+In a script, `require()` resolves relative paths and `node_modules` against
+the script file's own directory. In the interactive shell, it resolves
+against the shell's current working directory. `process`/`require` are not
+persisted to the saved environment file, listed by `show` (with no
+arguments), or offered as variable-name completions.
+
+Common Node.js globals are also available inside the VM, including
+`Buffer`, `URL`, `URLSearchParams`, `AbortController`, `Blob`, `FormData`,
+`Headers`, `Request`, `Response`, `setTimeout`, `setInterval`,
+`setImmediate`, `queueMicrotask`, `structuredClone`, `performance`, and
+`fetch` when supported by the installed Node.js version. `global` aliases
+the VM's `globalThis`; it does not expose the host application's global
+object.
+
 ## Quick command reference
 
 | Command | Purpose |
