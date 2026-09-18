@@ -284,7 +284,7 @@ async function runInteractive(options = {}) {
           return;
         }
         if ((character === '?' || key?.name === '?' || key?.name === 'question' ||
-             key?.sequence === '?') &&
+             key?.sequence === '?' || key?.sequence?.endsWith('?')) &&
             (!key || (!key.ctrl && !key.meta)) && showContextHelp()) {
           return;
         }
