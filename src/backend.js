@@ -233,6 +233,11 @@ function parseCommand(source) {
   return { command, apiPath, query, body };
 }
 
+function parameterOperator(method, parameter) {
+  if (method === 'get' || parameter.in === 'query') return '==';
+  return parameter.schema?.type && parameter.schema.type !== 'string' ? ':=' : '=';
+}
+
 class Backend {
   constructor(options = {}) {
     this.input = options.input || process.stdin;
@@ -710,7 +715,7 @@ class Backend {
       return Promise.resolve({
         candidates: names.map((name) => {
           const parameter = parameters.find((item) => item.name === name);
-          const operator = method === 'get' || parameter?.in === 'query' ? '==' : '=';
+          const operator = parameterOperator(method, parameter || {});
           return `${name}${operator}`;
         }),
         replacement: partial
@@ -773,7 +778,7 @@ class Backend {
         .replace(/\s+/g, ' ')
         .trim()
         .split(/(?<=[.!?])\s+/)[0];
-      const operator = method === 'get' || parameter.in === 'query' ? '==' : '=';
+      const operator = parameterOperator(method, parameter);
       result.push({ name: `${parameter.name}${operator}`, description });
       return result;
     }, []);

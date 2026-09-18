@@ -371,6 +371,8 @@ test('provides OpenAPI parameter context help without changing the input', async
     parameterHelp: () => [
       { name: 'groupId', in: 'query', description: 'The group identifier.' },
       { name: 'contractId', in: 'query', description: 'The contract identifier. Used for filtering.' },
+      { name: 'createFromVersion', in: 'body', schema: { type: 'integer' },
+        description: 'The version.' },
       { name: 'contractId', description: 'Duplicate entry.' }
     ]
   };
@@ -378,7 +380,7 @@ test('provides OpenAPI parameter context help without changing the input', async
   input.write(JSON.stringify({
     id: 52,
     type: 'context-help',
-    source: 'get /papi/v1/properties '
+    source: 'post /papi/v1/properties '
   }) + '\n');
   await settle();
   await backend.queue;
@@ -386,6 +388,7 @@ test('provides OpenAPI parameter context help without changing the input', async
     messages.find((message) => message.id === 52 && message.type === 'result').result,
     [
       { name: 'contractId==', description: 'The contract identifier.' },
+      { name: 'createFromVersion:=', description: 'The version.' },
       { name: 'groupId==', description: 'The group identifier.' }
     ]
   );
