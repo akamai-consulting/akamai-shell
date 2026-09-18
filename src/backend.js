@@ -618,6 +618,31 @@ class Backend {
   complete(code, cursor) {
     this.syncSettings();
     const source = String(code || '').slice(0, Number.isInteger(cursor) ? cursor : undefined);
+    const showMatch = source.match(/^show\s+(.+)$/);
+    if (showMatch) {
+      const [, expression] = showMatch;
+      const variableCompletion = this.completeVariableExpression(expression);
+      if (variableCompletion) {
+        return Promise.resolve({
+          candidates: variableCompletion.candidates.map((candidate) => `show ${candidate}`),
+          replacement: `show ${variableCompletion.replacement}`
+        });
+      }
+      if (/^[A-Za-z_$][\w$]*$/.test(expression)) {
+        return new Promise((resolve, reject) => {
+          this.repl.complete(expression, (error, result) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve({
+              candidates: result[0].map((candidate) => `show ${candidate}`),
+              replacement: `show ${result[1]}`
+            });
+          });
+        });
+      }
+    }
     const variableCompletion = this.completeVariableExpression(source);
     if (variableCompletion) return Promise.resolve(variableCompletion);
     const commandMatch = source.match(/^(get|post|put|find)\s+(\S*)$/);

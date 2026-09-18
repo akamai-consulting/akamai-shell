@@ -259,6 +259,8 @@ test('provides JavaScript and shell completion through the backend', async () =>
   input.write('{"id":22,"type":"complete","source":"config[\\"target\\"]"}\n');
   input.write('{"id":23,"type":"complete","source":"config[\\"target\\"]."}\n');
   input.write('{"id":24,"type":"complete","source":"config[\\"target\\"][\\"co"}\n');
+  input.write('{"id":25,"type":"complete","source":"show confi"}\n');
+  input.write('{"id":26,"type":"complete","source":"show config[\\"target\\"]."}\n');
   await settle();
   await backend.queue;
   assert.deepEqual(
@@ -294,6 +296,14 @@ test('provides JavaScript and shell completion through the backend', async () =>
   assert.deepEqual(
     messages.find((message) => message.id === 24 && message.type === 'result').result.candidates,
     ['config["target"]["contractId"]']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 25 && message.type === 'result').result.candidates,
+    ['show config']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 26 && message.type === 'result').result.candidates,
+    ['show config["target"].groupId', 'show config["target"].contractId']
   );
   await backend.shutdown();
 });
