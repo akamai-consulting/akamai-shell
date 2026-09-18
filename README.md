@@ -59,14 +59,16 @@ Set request context either with structured dotted settings or the shorthand
 fields:
 
 ```text
-akamai> set target.accountSwitchKey B-C-1ED34DK
-akamai> set target.contractId ctr_example
-akamai> set target.groupId grp_example
+akamai> set target.accountSwitchKey B-C-YOUR-ACCOUNT-SWITCH-KEY
+akamai> set target.contractId ctr_YOUR_CONTRACT_ID
+akamai> set target.groupId grp_YOUR_GROUP_ID
 ```
 
 The `config` value is an ordinary JavaScript dictionary. Use `show config` to
 inspect the current non-sensitive settings. Credentials, authorization
 headers, and other secret-bearing values are not displayed or persisted.
+Identifiers containing `YOUR_` in this guide are placeholders; replace them
+with identifiers from your own account.
 
 Make a first request:
 
@@ -119,7 +121,7 @@ There are three related kinds of state:
    options. It can also be read or changed with normal JavaScript.
 2. `set` is the concise command interface for known configuration values.
    Scalar settings use `set name value`; structured settings use dotted paths,
-   such as `set target.contractId ctr_example`. The existing
+   such as `set target.contractId ctr_YOUR_CONTRACT_ID`. The existing
    `set accountSwitchKey`, `set contractId`, and `set groupId` forms update
    the corresponding fields under `config.target` as shorthand.
 3. User-defined JavaScript variables and functions live in the current backend
@@ -131,9 +133,9 @@ Examples:
 ```text
 set edgerc ~/.edgerc
 set edgercSection papi
-set target.accountSwitchKey B-C-1ED34DK
-set target.contractId ctr_example
-set target.groupId grp_example
+set target.accountSwitchKey B-C-YOUR-ACCOUNT-SWITCH-KEY
+set target.contractId ctr_YOUR_CONTRACT_ID
+set target.groupId grp_YOUR_GROUP_ID
 set timeout.default 15000
 show config
 ```
@@ -193,7 +195,7 @@ properties = await $("get /papi/v1/properties")
 JavaScript values can be used in later requests:
 
 ```text
-put -v "$rules" /papi/v1/properties/prp_example/versions/1/rules
+put -v "$rules" /papi/v1/properties/prp_YOUR_PROPERTY_ID/versions/1/rules
 get /papi/v1/properties/$properties["properties"]["items"][0]["propertyId"]
 ```
 
@@ -276,7 +278,7 @@ name:=value       JSON-decoded body field
 For example:
 
 ```text
-get /papi/v1/properties groupId==grp_example
+get /papi/v1/properties groupId==grp_YOUR_GROUP_ID
 post /edge-diagnostics/v1/curl url=https://example.test timeout:=30 enabled:=true
 put -v "$payload" /some/path name=updated
 ```
@@ -285,7 +287,7 @@ API paths include their service prefix:
 
 ```text
 get /papi/v1/properties
-get /cloudlets/v3/policies/371861/versions
+get /cloudlets/v3/policies/YOUR_POLICY_ID/versions
 get /edge-diagnostics/v1/curl
 ```
 
@@ -294,7 +296,7 @@ get /edge-diagnostics/v1/curl
 | Command | Behavior |
 | --- | --- |
 | `set <name> <value>` | Set a known scalar setting. |
-| `set <object>.<property> <value>` | Set a value in a structured setting, such as `set target.groupId grp_example`. |
+| `set <object>.<property> <value>` | Set a value in a structured setting, such as `set target.groupId grp_YOUR_GROUP_ID`. |
 | `show [expression]` | Display the session namespace or one expression. |
 | `echo <text> [\| command]` | Print expanded text and optionally pipe it to a local command. |
 | `! <command>` or `!<command>` | Run a local shell command. |
@@ -358,7 +360,7 @@ body fields:
 ```text
 get /papi/v1/properties ?
 post /edge-diagnostics/v1/curl url=https://example.test ?
-put /papi/v1/properties/prp_example/versions/1/rules createFromVersion:?
+put /papi/v1/properties/prp_YOUR_PROPERTY_ID/versions/1/rules createFromVersion:?
 ```
 
 The question mark is consumed only in a recognized API-help context. A
