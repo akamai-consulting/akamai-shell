@@ -399,6 +399,11 @@ test('provides OpenAPI parameter context help without changing the input', async
     type: 'context-help',
     source: 'post /papi/v1/properties createFromVersion:='
   }) + '\n');
+  input.write(JSON.stringify({
+    id: 56,
+    type: 'context-help',
+    source: 'post /papi/v1/properties createFromVersion:=1 '
+  }) + '\n');
   await settle();
   await backend.queue;
   assert.deepEqual(
@@ -417,6 +422,15 @@ test('provides OpenAPI parameter context help without changing the input', async
   assert.deepEqual(
     messages.find((message) => message.id === 55 && message.type === 'result').result,
     [{ name: 'createFromVersion:=', description: 'The version.' }]
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 56 && message.type === 'result').result,
+    [
+      { name: 'contractId==', description: 'The contract identifier.' },
+      { name: 'createFromVersion:=', description: 'The version.' },
+      { name: 'createFromVersionEtag=', description: 'The version ETag.' },
+      { name: 'groupId==', description: 'The group identifier.' }
+    ]
   );
   await backend.shutdown();
 });

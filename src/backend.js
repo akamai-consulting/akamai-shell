@@ -772,9 +772,12 @@ class Backend {
   }
 
   contextHelp(source) {
-    const match = String(source).match(/^(get|post|put)\s+(\S+)(?:\s+(\S*))?\s*$/);
+    const match = String(source).match(/^(get|post|put)\s+(\S+)(?:\s+(.*))?$/);
     if (!match) return [];
-    const [, method, pathToken, partial = ''] = match;
+    const [, method, pathToken, argumentsText] = match;
+    const partial = argumentsText === undefined || /\s$/.test(argumentsText)
+      ? ''
+      : argumentsText.split(/\s+/).pop();
     const apiPath = this.expandCompletionPath(pathToken);
     const parameters = this.apiRegistry.parameterHelp(method.toUpperCase(), apiPath);
     const operatorMatch = partial.match(/^(.*?)(:=|==|=|:)$/);
