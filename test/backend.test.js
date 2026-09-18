@@ -294,6 +294,7 @@ test('provides JavaScript and shell completion through the backend', async () =>
   input.write('{"id":12,"type":"complete","source":"get /papi/v1/pr"}\n');
   input.write('{"id":28,"type":"complete","source":"get /papi/v1/properties"}\n');
   input.write('{"id":29,"type":"complete","source":"get /papi/v1/properties "}\n');
+  input.write('{"id":30,"type":"complete","source":"get /papi/v1/properties contractId==value "}\n');
   input.write('{"id":13,"type":"complete","source":"sho"}\n');
   input.write('{"id":27,"type":"complete","source":"set edg"}\n');
   input.write('{"id":14,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
@@ -320,6 +321,10 @@ test('provides JavaScript and shell completion through the backend', async () =>
   assert.deepEqual(
     messages.find((message) => message.id === 29 && message.type === 'result').result.candidates,
     ['contractId==', 'groupId==']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 30 && message.type === 'result').result,
+    { candidates: ['contractId==', 'groupId=='], replacement: '' }
   );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
   .result.candidates.includes('show'));

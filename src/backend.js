@@ -703,9 +703,12 @@ class Backend {
       }));
     }
 
-    const parameterMatch = source.match(/^(get|post|put|find)\s+(\S+)\s+(\S*)$/);
+    const parameterMatch = source.match(/^(get|post|put|find)\s+(\S+)(?:\s+(.*))?$/);
     if (parameterMatch) {
-      const [, method, pathToken, partial] = parameterMatch;
+      const [, method, pathToken, argumentsText] = parameterMatch;
+      const partial = argumentsText === undefined || /\s$/.test(argumentsText)
+        ? ''
+        : argumentsText.split(/\s+/).pop();
       const apiPath = this.expandCompletionPath(pathToken);
       const parameters = this.apiRegistry.parameterHelp(
         method === 'find' ? 'GET' : method.toUpperCase(), apiPath);
