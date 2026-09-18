@@ -4,6 +4,7 @@ const repl = require('node:repl');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const Module = require('node:module');
 const { PassThrough } = require('node:stream');
 const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
@@ -84,8 +85,9 @@ function parseCommand(source) {
     return { command, name: tokens.shift(), value: tokens.join(' ') };
   }
   if (!tokens.length || !tokens[0].startsWith('/')) throw new Error(`Usage: ${command} <api-path>`);
-  const apiPath = tokens.shift();
-  const query = {};
+  const rawPath = tokens.shift();
+  const [apiPath, queryString] = rawPath.split('?', 2);
+  const query = Object.fromEntries(new URLSearchParams(queryString || ''));
   const body = {};
   for (const token of tokens) {
     const match = token.match(/^([^:=]+)(:=|=)(.*)$/);
@@ -178,6 +180,7 @@ class Backend {
       let result;
       switch (request.type) {
         case 'initialize':
+          this.initialize(request);
           result = { ready: true };
           break;
         case 'evaluate':
@@ -284,6 +287,7 @@ class Backend {
     if (parsed.command === 'help') {
       return 'get <api-path> [query]\npost|put <api-path> [name=value|name:=json]\nset <name> <value>\nshow\nhelp\nexit';
     }
+
     if (parsed.command === 'exit' || parsed.command === 'quit') return { exited: true };
     if (parsed.command === 'set') {
       const name = parsed.name === 'edgerc-section' ? 'edgercSection' : parsed.name;
@@ -314,6 +318,21 @@ class Backend {
       ? await this.apiRegistry.get(this.settings, parsed.apiPath, parsed.query, this.requestGet)
       : await this.apiRegistry.dispatch(method, this.settings, parsed.apiPath, parsed.query, parsed.body, this.requestGet);
     return response.body;
+  }
+
+  initialize(options = {}) {
+    if (options.workingDirectory) process.chdir(path.resolve(options.workingDirectory));
+    if (options.scriptPath) {
+      const scriptPath = path.resolve(options.scriptPath);
+      process.argv = [process.argv[0], scriptPath, ...(options.scriptArgs || [])];
+      globalThis.__filename = scriptPath;
+      globalThis.__dirname = path.dirname(scriptPath);
+      globalThis.require = Module.createRequire(scriptPath);
+    } else {
+      globalThis.__filename = __filename;
+      globalThis.__dirname = __dirname;
+      globalThis.require = require;
+    }
   }
 
   complete(code, cursor) {

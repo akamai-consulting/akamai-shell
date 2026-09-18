@@ -71,12 +71,12 @@ test('dispatches get commands through the API registry', async () => {
   };
   const requestGet = () => {};
   const { input, messages, backend } = harness({ apiRegistry: registry, requestGet });
-  input.write('{"id":4,"type":"command","source":"get /papi/v1/properties contractId=ctr"}\n');
+  input.write('{"id":4,"type":"command","source":"get /papi/v1/properties?groupId=grp contractId=ctr"}\n');
   await settle();
   await backend.queue;
   assert.deepEqual(messages.find((message) => message.id === 4 && message.type === 'result').result, { ok: true });
   assert.equal(calls[0].apiPath, '/papi/v1/properties');
-  assert.deepEqual(calls[0].query, { contractId: 'ctr' });
+  assert.deepEqual(calls[0].query, { groupId: 'grp', contractId: 'ctr' });
   assert.equal(calls[0].requestGet, requestGet);
   await backend.shutdown();
 });
@@ -139,5 +139,24 @@ test('provides JavaScript and shell completion through the backend', async () =>
   );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
     .result.candidates.includes('set'));
+  await backend.shutdown();
+});
+
+test('initializes native script module bindings and arguments', async () => {
+  const { input, messages, backend } = harness();
+  input.write(JSON.stringify({
+    id: 14,
+    type: 'initialize',
+    scriptPath: '/tmp/example-script.as',
+    scriptArgs: ['one', 'two'],
+    workingDirectory: '/tmp'
+  }) + '\n');
+  input.write('{"id":15,"type":"evaluate","source":"[process.argv[1], process.argv[2], __dirname, typeof require]"}\n');
+  await settle();
+  await backend.queue;
+  assert.deepEqual(
+    messages.find((message) => message.id === 15 && message.type === 'result').result.value,
+    ['/tmp/example-script.as', 'one', '/tmp', 'function']
+  );
   await backend.shutdown();
 });
