@@ -12,7 +12,7 @@ const { findResources } = require('./find');
 const { createRecorder } = require('./recorder');
 
 const DEFAULT_TIMEOUT = 1000;
-const DEFAULT_STATE_FILE = path.join(process.cwd(), '.akamai-shell-state.js');
+const DEFAULT_STATE_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'state.js');
 
 function asText(value) {
   if (typeof value === 'string') return value;
@@ -421,6 +421,7 @@ class Backend {
         // are intentionally excluded from the portable state file.
       }
     }
+    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(filePath, `${lines.join('\n')}\n`, { mode: 0o600 });
     return filePath;
   }
