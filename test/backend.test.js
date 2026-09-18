@@ -154,7 +154,8 @@ test('writes GET output and merges JSON files into write bodies', async () => {
     source: `put -f ${bodyFile} /example name=from-argument count:=2`
   }) + '\n');
   input.write('{"id":62,"type":"evaluate","source":"payload = { nested: [1, 2], enabled: true }"}\n');
-  input.write('{"id":63,"type":"command","source":"put -v \\"$payload\\" /example extra=value"}\n');
+  input.write('{"id":63,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
+  input.write('{"id":64,"type":"command","source":"put -v \\"$payload\\" $pp/versions/80/rules extra=value"}\n');
   await settle();
   await backend.queue;
   assert.equal(messages.find((message) => message.id === 60 && message.type === 'result').result, undefined);
@@ -167,7 +168,7 @@ test('writes GET output and merges JSON files into write bodies', async () => {
   });
   assert.deepEqual(calls[1], {
     method: 'PUT',
-    apiPath: '/example',
+    apiPath: '/papi/v1/properties/prp_526230/versions/80/rules',
     query: {},
     body: { nested: [1, 2], enabled: true, extra: 'value' }
   });

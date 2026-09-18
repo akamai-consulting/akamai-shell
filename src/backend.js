@@ -525,10 +525,13 @@ class Backend {
     const expandedSource = this.expandCommandVariables(source);
     const valueMatch = source.match(/^(post|put)\s+-v\s+("|')?\$([A-Za-z_$][\w$]*)\2?(?:\s|$)/);
     let valueOverride;
+    let commandSource = expandedSource;
     if (valueMatch) {
       valueOverride = globalThis[valueMatch[3]];
+      const remainder = this.expandCommandVariables(source.slice(valueMatch[0].length));
+      commandSource = `${valueMatch[1]} -v __akamai_json_value__ ${remainder.trimStart()}`;
     }
-    const parsed = parseCommand(expandedSource, valueOverride);
+    const parsed = parseCommand(commandSource, valueOverride);
     if (!parsed) return (await this.evaluate(source)).value;
     this.syncSettings();
     if (parsed.command === '?' || parsed.command === 'help') {
