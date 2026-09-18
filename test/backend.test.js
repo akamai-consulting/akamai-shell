@@ -210,10 +210,12 @@ test('pipes every command result, including help and shell escapes', async () =>
   const { input, messages, backend } = harness();
   input.write('{"id":47,"type":"command","source":"help | head -1"}\n');
   input.write('{"id":48,"type":"command","source":"! printf hello | head -1"}\n');
+  input.write('{"id":49,"type":"command","source":"!printf hello"}\n');
   await settle();
   await backend.queue;
   assert.equal(messages.find((message) => message.id === 47 && message.type === 'result').result, 'get <api-path> [query]\n');
   assert.equal(messages.find((message) => message.id === 48 && message.type === 'result').result, 'hello');
+  assert.equal(messages.find((message) => message.id === 49 && message.type === 'result').result, 'hello');
   await backend.shutdown();
 });
 

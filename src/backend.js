@@ -173,6 +173,12 @@ function words(source) {
 }
 
 function parseCommand(source) {
+  const rawSource = String(source);
+  if (rawSource.startsWith('!')) {
+    const shellSource = rawSource.slice(1).trimStart();
+    if (!shellSource) throw new Error('! expects a shell command');
+    return { command: '!', source: shellSource };
+  }
   const tokens = words(source);
   if (!tokens.length) return null;
   const command = tokens.shift().toLowerCase();
