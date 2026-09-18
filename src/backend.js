@@ -400,6 +400,7 @@ class Backend {
           break;
         case 'evaluate':
           result = await this.evaluate(request.source || request.code || '', request.timeout);
+          if (result.value === undefined) result = undefined;
           break;
         case 'command':
           result = await this.command(request.source || request.code || '');

@@ -35,7 +35,7 @@ test('suppresses JavaScript expression results terminated by semicolons', async 
   await settle();
   await backend.queue;
   const result = messages.find((message) => message.id === 66 && message.type === 'result').result;
-  assert.deepEqual(result, {});
+  assert.equal(result, undefined);
   assert.equal(globalThis.foo, 123);
   delete globalThis.foo;
   await backend.shutdown();
