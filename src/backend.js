@@ -324,7 +324,8 @@ class Backend {
   }
 
   async command(source) {
-    const parsed = parseCommand(source);
+    const expandedSource = this.expandCommandVariables(source);
+    const parsed = parseCommand(expandedSource);
     if (!parsed) return (await this.evaluate(source)).value;
     this.syncSettings();
     if (parsed.command === 'help') {
@@ -386,6 +387,17 @@ class Backend {
       ? await this.apiRegistry.get(this.settings, parsed.apiPath, parsed.query, this.requestGet)
       : await this.apiRegistry.dispatch(method, this.settings, parsed.apiPath, parsed.query, parsed.body, this.requestGet);
     return response.body;
+  }
+
+  expandCommandVariables(source) {
+    return String(source).replace(/\$([A-Za-z_$][\w$]*)/g, (match, name) => {
+      if (!(name in globalThis)) throw new Error(`undefined variable: ${name}`);
+      const value = globalThis[name];
+      if (typeof value === 'string') return value;
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) throw new Error(`cannot expand variable: ${name}`);
+      return serialized;
+    });
   }
 
   saveState(filePath) {

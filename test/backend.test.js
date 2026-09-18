@@ -83,6 +83,24 @@ test('dispatches get commands through the API registry', async () => {
   await backend.shutdown();
 });
 
+test('expands variables in non-JavaScript command input', async () => {
+  const calls = [];
+  const registry = {
+    get: async (settings, apiPath) => {
+      calls.push(apiPath);
+      return { statusCode: 200, body: { ok: true } };
+    }
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write('{"id":44,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
+  input.write('{"id":45,"type":"command","source":"get $pp"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(calls[0], '/papi/v1/properties/prp_526230');
+  assert.deepEqual(messages.find((message) => message.id === 45 && message.type === 'result').result, { ok: true });
+  await backend.shutdown();
+});
+
 test('exposes config target values to API dispatch', async () => {
   const calls = [];
   const registry = {
