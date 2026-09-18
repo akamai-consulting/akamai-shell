@@ -242,10 +242,13 @@ test('provides JavaScript and shell completion through the backend', async () =>
   input.write('{"id":13,"type":"complete","source":"set"}\n');
   input.write('{"id":14,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
   input.write('{"id":15,"type":"complete","source":"get $pp/"}\n');
-  input.write('{"id":18,"type":"evaluate","source":"config = { edgercSection: \\"papi\\", target: { groupId: \\"grp\\" } }"}\n');
+  input.write('{"id":18,"type":"evaluate","source":"config = { edgercSection: \\"papi\\", target: { groupId: \\"grp\\", contractId: \\"ctr\\" } }"}\n');
   input.write('{"id":19,"type":"complete","source":"config"}\n');
   input.write('{"id":20,"type":"complete","source":"config["}\n');
   input.write('{"id":21,"type":"complete","source":"config[\\"edgercS"}\n');
+  input.write('{"id":22,"type":"complete","source":"config[\\"target\\"]"}\n');
+  input.write('{"id":23,"type":"complete","source":"config[\\"target\\"]."}\n');
+  input.write('{"id":24,"type":"complete","source":"config[\\"target\\"][\\"co"}\n');
   await settle();
   await backend.queue;
   assert.deepEqual(
@@ -269,6 +272,18 @@ test('provides JavaScript and shell completion through the backend', async () =>
   assert.deepEqual(
     messages.find((message) => message.id === 21 && message.type === 'result').result.candidates,
     ['config["edgercSection"]']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 22 && message.type === 'result').result.candidates,
+    ["config[\"target\"]["]
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 23 && message.type === 'result').result.candidates,
+    ['config["target"].groupId', 'config["target"].contractId']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 24 && message.type === 'result').result.candidates,
+    ['config["target"]["contractId"]']
   );
   await backend.shutdown();
 });

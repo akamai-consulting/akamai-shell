@@ -664,43 +664,68 @@ class Backend {
   }
 
   completeVariableExpression(source) {
-    const bracketMatch = source.match(/^([A-Za-z_$][\w$]*)\[(?:(["'])([^"']*)?)?$/);
+    const properties = (value) => Object.getOwnPropertyNames(value)
+      .filter((key) => key !== 'recorder');
+    const bracketMatch = source.match(/^(.*)\[(?:(["'])([^"']*)?)?$/);
     if (bracketMatch) {
-      const [, root, quote, partial = ''] = bracketMatch;
-      const value = globalThis[root];
+      const [, base, quote, partial = ''] = bracketMatch;
+      const value = this.resolveVariableExpression(base);
       if (!value || typeof value !== 'object') return null;
-      const prefix = quote ? `${root}[${quote}` : `${root}["`;
+      const prefix = quote ? `${base}[${quote}` : `${base}["`;
       const suffix = quote || '"';
       return {
-        candidates: Object.getOwnPropertyNames(value)
-          .filter((key) => key !== 'recorder')
+        candidates: properties(value)
           .filter((key) => key.startsWith(partial))
           .map((key) => `${prefix}${key}${suffix}]`),
         replacement: source
       };
     }
 
-    const dotMatch = source.match(/^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)?$/);
+    const dotMatch = source.match(/^(.*)\.([A-Za-z_$][\w$]*)?$/);
     if (dotMatch) {
-      const [, root, partial = ''] = dotMatch;
-      const value = globalThis[root];
+      const [, base, partial = ''] = dotMatch;
+      const value = this.resolveVariableExpression(base);
       if (!value || typeof value !== 'object') return null;
       return {
-        candidates: Object.getOwnPropertyNames(value)
-          .filter((key) => key !== 'recorder')
+        candidates: properties(value)
           .filter((key) => key.startsWith(partial))
-          .map((key) => `${root}.${key}`),
+          .map((key) => `${base}.${key}`),
         replacement: source
       };
     }
 
+    const resolved = this.resolveVariableExpression(source);
+    if (source.endsWith(']') && resolved && typeof resolved === 'object') {
+      return { candidates: [`${source}[`], replacement: source };
+    }
     if (/^[A-Za-z_$][\w$]*$/.test(source) &&
-        Object.prototype.hasOwnProperty.call(globalThis, source) &&
-        globalThis[source] &&
-        typeof globalThis[source] === 'object') {
+        resolved && typeof resolved === 'object') {
       return { candidates: [`${source}[`], replacement: source };
     }
     return null;
+  }
+
+  resolveVariableExpression(source) {
+    const rootMatch = source.match(/^([A-Za-z_$][\w$]*)/);
+    if (!rootMatch) return undefined;
+    let value = globalThis[rootMatch[1]];
+    let remaining = source.slice(rootMatch[1].length);
+    while (remaining) {
+      let match = remaining.match(/^\[("|')([^"']*)\1\]/);
+      if (match) {
+        value = value?.[match[2]];
+        remaining = remaining.slice(match[0].length);
+        continue;
+      }
+      match = remaining.match(/^\.([A-Za-z_$][\w$]*)/);
+      if (match) {
+        value = value?.[match[1]];
+        remaining = remaining.slice(match[0].length);
+        continue;
+      }
+      return undefined;
+    }
+    return value;
   }
 
   expandCompletionPath(pathToken) {
