@@ -198,3 +198,28 @@ test('gets property rule trees as a read-only resource', async () => {
 
   assert.equal(requests[0].path, '/papi/v1/properties/prp_123/versions/3/rules');
 });
+
+test('filters settings to query parameters supported by each resource', async () => {
+  const requests = [];
+  await get(
+    {
+      edgerc: '/home/test/.edgerc',
+      edgercSection: 'default',
+      target: { contractId: 'ctr_target', groupId: 'grp_target' },
+      parameterDefaults: {
+        edgerc: '/home/test/.edgerc',
+        edgercSection: 'default',
+        target: { contractId: 'ctr_target', groupId: 'grp_target' },
+        contractId: 'ctr_default',
+        groupId: 'grp_default'
+      }
+    },
+    '/properties/prp_526230/versions/79/rules',
+    {},
+    fakeClientFactory(requests, { rules: {} })
+  );
+  assert.deepEqual(requests[0].qs, {
+    contractId: 'ctr_default',
+    groupId: 'grp_default'
+  });
+});
