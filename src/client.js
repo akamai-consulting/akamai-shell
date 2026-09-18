@@ -285,7 +285,7 @@ async function runInteractive(options = {}) {
         }
         if ((character === '?' || key?.name === '?' || key?.name === 'question' ||
              key?.sequence === '?' || key?.sequence?.endsWith('?')) &&
-            (!key || (!key.ctrl && !key.meta)) && showContextHelp()) {
+            showContextHelp()) {
           return;
         }
         ttyWrite(character, key);
