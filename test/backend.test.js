@@ -130,6 +130,44 @@ test('parses HTTPie-style query and JSON body arguments', async () => {
   await backend.shutdown();
 });
 
+test('writes GET output and merges JSON files into write bodies', async () => {
+  const outputFile = path.join('/tmp', `akamai-shell-get-${process.pid}.json`);
+  const bodyFile = path.join('/tmp', `akamai-shell-body-${process.pid}.json`);
+  fs.writeFileSync(bodyFile, JSON.stringify({ name: 'from-file', count: 1 }));
+  const calls = [];
+  const registry = {
+    get: async () => ({ statusCode: 200, body: { properties: [] } }),
+    dispatch: async (method, settings, apiPath, query, body) => {
+      calls.push({ method, apiPath, query, body });
+      return { statusCode: 200, body: { saved: true } };
+    }
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write(JSON.stringify({
+    id: 60,
+    type: 'command',
+    source: `get -f ${outputFile} /papi/v1/properties`
+  }) + '\n');
+  input.write(JSON.stringify({
+    id: 61,
+    type: 'command',
+    source: `put -f ${bodyFile} /example name=from-argument count:=2`
+  }) + '\n');
+  await settle();
+  await backend.queue;
+  assert.equal(messages.find((message) => message.id === 60 && message.type === 'result').result, undefined);
+  assert.deepEqual(JSON.parse(fs.readFileSync(outputFile, 'utf8')), { properties: [] });
+  assert.deepEqual(calls[0], {
+    method: 'PUT',
+    apiPath: '/example',
+    query: {},
+    body: { name: 'from-argument', count: 2 }
+  });
+  fs.unlinkSync(outputFile);
+  fs.unlinkSync(bodyFile);
+  await backend.shutdown();
+});
+
 test('expands variables in non-JavaScript command input', async () => {
   const calls = [];
   const registry = {

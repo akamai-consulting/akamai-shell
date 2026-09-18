@@ -211,6 +211,12 @@ function parseCommand(source) {
     if (tokens.length < 2) throw new Error('Usage: set <name> <value>');
     return { command, name: tokens.shift(), value: tokens.join(' ') };
   }
+  let filePath;
+  if (tokens[0] === '-f') {
+    if (!tokens[1]) throw new Error(`Usage: ${command} -f <file> <api-path>`);
+    filePath = tokens[1];
+    tokens.splice(0, 2);
+  }
   if (!tokens.length || !tokens[0].startsWith('/')) throw new Error(`Usage: ${command} <api-path>`);
   const rawPath = tokens.shift();
   const [apiPath, queryString] = rawPath.split('?', 2);
@@ -230,7 +236,7 @@ function parseCommand(source) {
       }
     } else body[name] = value;
   }
-  return { command, apiPath, query, body };
+  return { command, apiPath, query, body, filePath };
 }
 
 function parameterOperator(method, parameter) {
@@ -534,9 +540,35 @@ class Backend {
       return this.userVariables();
     }
     const method = parsed.command.toUpperCase();
+    if (parsed.filePath && method !== 'GET') {
+      const filePath = parsed.filePath.startsWith('~')
+        ? path.join(os.homedir(), parsed.filePath.slice(2))
+        : parsed.filePath;
+      let fileBody;
+      try {
+        fileBody = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      } catch (error) {
+        throw new Error(`Unable to read JSON body file ${filePath}: ${error.message}`, { cause: error });
+      }
+      if (!fileBody || typeof fileBody !== 'object' || Array.isArray(fileBody)) {
+        throw new Error(`JSON body file ${filePath} must contain an object`);
+      }
+      parsed.body = { ...fileBody, ...parsed.body };
+    }
     const response = method === 'GET'
       ? await this.apiRegistry.get(this.settings, parsed.apiPath, parsed.query, this.requestGet)
       : await this.apiRegistry.dispatch(method, this.settings, parsed.apiPath, parsed.query, parsed.body, this.requestGet);
+    if (parsed.filePath && method === 'GET') {
+      const filePath = parsed.filePath.startsWith('~')
+        ? path.join(os.homedir(), parsed.filePath.slice(2))
+        : parsed.filePath;
+      try {
+        fs.writeFileSync(filePath, `${JSON.stringify(response.body, null, 2)}\n`, { mode: 0o600 });
+      } catch (error) {
+        throw new Error(`Unable to write GET output file ${filePath}: ${error.message}`, { cause: error });
+      }
+      return undefined;
+    }
     return response.body;
   }
 
