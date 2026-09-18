@@ -13,7 +13,6 @@ const { findResources } = require('./find');
 const { createRecorder } = require('./recorder');
 
 const DEFAULT_TIMEOUT = 10000;
-const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
 const DEFAULT_STATE_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'state.js');
 const DEFAULT_STARTUP_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'startup.js');
 
@@ -451,8 +450,6 @@ class Backend {
         }).stdin?.end(input);
       });
     }
-    const contextHelp = await this.contextHelp(source);
-    if (contextHelp) return contextHelp;
     const expandedSource = this.expandCommandVariables(source);
     const parsed = parseCommand(expandedSource);
     if (!parsed) return (await this.evaluate(source)).value;
@@ -530,25 +527,6 @@ class Backend {
       ? await this.apiRegistry.get(this.settings, parsed.apiPath, parsed.query, this.requestGet)
       : await this.apiRegistry.dispatch(method, this.settings, parsed.apiPath, parsed.query, parsed.body, this.requestGet);
     return response.body;
-  }
-
-  async contextHelp(source) {
-    const setMatch = String(source).trim().match(/^set\s+([A-Za-z_$][\w$]*)\s+\?$/);
-    if (setMatch) {
-      const choices = {
-        logLevel: LOG_LEVELS,
-        recordMode: ['auto', 'on', 'off'],
-        logOutput: ['stdout', 'stderr']
-      };
-      return choices[setMatch[1]] || [];
-    }
-    const apiMatch = String(source).trim().match(/^(get|post|put)\s+(\S+)\s+\?$/);
-    if (!apiMatch) return null;
-    const [, method, pathToken] = apiMatch;
-    const apiPath = this.expandCommandVariables(pathToken);
-    this.syncSettings();
-    const parameters = this.apiRegistry.parameterHelp(method.toUpperCase(), apiPath);
-    return [...new Set(parameters.map((parameter) => parameter.name))];
   }
 
   expandCommandVariables(source) {
@@ -698,12 +676,34 @@ class Backend {
         this.completionCache,
         this.requestGet
       ).then(([candidates]) => ({
-        candidates: candidates.map((candidate) =>
-          candidate.startsWith(inputPath)
+        candidates: candidates.map((candidate) => {
+          const suffix = candidate.startsWith(inputPath)
             ? `${pathToken}${candidate.slice(inputPath.length)}`
-            : candidate),
+            : candidate;
+          return candidate === inputPath &&
+              typeof this.apiRegistry.hasCompletionDescendants === 'function' &&
+              !this.apiRegistry.hasCompletionDescendants(
+                method === 'find' ? 'GET' : method.toUpperCase(), inputPath)
+            ? `${suffix} `
+            : suffix;
+        }),
         replacement: pathToken
       }));
+    }
+
+    const parameterMatch = source.match(/^(get|post|put|find)\s+(\S+)\s+(\S*)$/);
+    if (parameterMatch) {
+      const [, method, pathToken, partial] = parameterMatch;
+      const apiPath = this.expandCompletionPath(pathToken);
+      const parameters = this.apiRegistry.parameterHelp(
+        method === 'find' ? 'GET' : method.toUpperCase(), apiPath);
+      const names = [...new Set(parameters.map((parameter) => parameter.name))]
+        .filter((name) => name.startsWith(partial));
+      const prefix = partial ? source.slice(0, -partial.length) : source;
+      return Promise.resolve({
+        candidates: names.map((name) => `${prefix}${name}=`),
+        replacement: source
+      });
     }
 
     const setMatch = source.match(/^set\s+(\S*)$/);

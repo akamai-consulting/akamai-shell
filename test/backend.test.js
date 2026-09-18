@@ -154,26 +154,6 @@ test('pipes every command result, including help and shell escapes', async () =>
   await backend.shutdown();
 });
 
-test('provides contextual help for settings and API parameters', async () => {
-  const registry = {
-    parameterHelp: () => [{ name: 'contractId' }, { name: 'groupId' }, { name: 'contractId' }]
-  };
-  const { input, messages, backend } = harness({ apiRegistry: registry });
-  input.write('{"id":50,"type":"command","source":"set logLevel ?"}\n');
-  input.write('{"id":51,"type":"command","source":"get /papi/v1/properties ?"}\n');
-  await settle();
-  await backend.queue;
-  assert.deepEqual(
-    messages.find((message) => message.id === 50 && message.type === 'result').result,
-    ['debug', 'info', 'warn', 'error']
-  );
-  assert.deepEqual(
-    messages.find((message) => message.id === 51 && message.type === 'result').result,
-    ['contractId', 'groupId']
-  );
-  await backend.shutdown();
-});
-
 test('exposes config target values to API dispatch', async () => {
   const calls = [];
   const registry = {
@@ -281,10 +261,14 @@ test('provides JavaScript and shell completion through the backend', async () =>
         return [['/papi/v1/properties/prp_526230/versions'], inputPath];
       }
       return [['/papi/v1/properties'], '/papi/v1/pr'];
-    }
+    },
+    hasCompletionDescendants: () => false,
+    parameterHelp: () => [{ name: 'contractId' }, { name: 'groupId' }]
   };
   const { input, messages, backend } = harness({ apiRegistry: registry });
   input.write('{"id":12,"type":"complete","source":"get /papi/v1/pr"}\n');
+  input.write('{"id":28,"type":"complete","source":"get /papi/v1/properties"}\n');
+  input.write('{"id":29,"type":"complete","source":"get /papi/v1/properties "}\n');
   input.write('{"id":13,"type":"complete","source":"sho"}\n');
   input.write('{"id":27,"type":"complete","source":"set edg"}\n');
   input.write('{"id":14,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
@@ -303,6 +287,14 @@ test('provides JavaScript and shell completion through the backend', async () =>
   assert.deepEqual(
     messages.find((message) => message.id === 12 && message.type === 'result').result.candidates,
     ['/papi/v1/properties']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 28 && message.type === 'result').result.candidates,
+    ['/papi/v1/properties ']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 29 && message.type === 'result').result.candidates,
+    ['get /papi/v1/properties contractId=', 'get /papi/v1/properties groupId=']
   );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
   .result.candidates.includes('show'));
