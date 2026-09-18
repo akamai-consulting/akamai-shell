@@ -261,8 +261,8 @@ contextual help, recording, and session persistence. It is trusted local code:
 | `get -f <file> <api-path> ...` | Write formatted response JSON to `<file>` instead of the terminal. |
 | `post <api-path> [arguments ...]` | Authenticated JSON POST. |
 | `put <api-path> [arguments ...]` | Authenticated JSON PUT. |
-| `post|put -f <file> <api-path> ...` | Load an object body from `<file>`; inline fields override file fields. |
-| `post|put -v <expression> <api-path> ...` | Use a JavaScript object as the initial body; inline fields merge over it. |
+| `post or put -f <file> <api-path> ...` | Load an object body from `<file>`; inline fields override file fields. |
+| `post or put -v <expression> <api-path> ...` | Use a JavaScript object as the initial body; inline fields merge over it. |
 | `find <api-path> -q <rule>` | Fetch one collection response and find matching dictionaries locally. |
 
 HTTPie-style arguments use these operators:
