@@ -242,6 +242,10 @@ test('provides JavaScript and shell completion through the backend', async () =>
   input.write('{"id":13,"type":"complete","source":"set"}\n');
   input.write('{"id":14,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
   input.write('{"id":15,"type":"complete","source":"get $pp/"}\n');
+  input.write('{"id":18,"type":"evaluate","source":"config = { edgercSection: \\"papi\\", target: { groupId: \\"grp\\" } }"}\n');
+  input.write('{"id":19,"type":"complete","source":"config"}\n');
+  input.write('{"id":20,"type":"complete","source":"config["}\n');
+  input.write('{"id":21,"type":"complete","source":"config[\\"edgercS"}\n');
   await settle();
   await backend.queue;
   assert.deepEqual(
@@ -253,6 +257,18 @@ test('provides JavaScript and shell completion through the backend', async () =>
   assert.deepEqual(
     messages.find((message) => message.id === 15 && message.type === 'result').result.candidates,
     ['$pp/versions']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 19 && message.type === 'result').result.candidates,
+    ['config[']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 20 && message.type === 'result').result.candidates,
+    ['config["edgercSection"]', 'config["target"]']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 21 && message.type === 'result').result.candidates,
+    ['config["edgercSection"]']
   );
   await backend.shutdown();
 });

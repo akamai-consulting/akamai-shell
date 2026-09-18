@@ -612,6 +612,8 @@ class Backend {
   complete(code, cursor) {
     this.syncSettings();
     const source = String(code || '').slice(0, Number.isInteger(cursor) ? cursor : undefined);
+    const variableCompletion = this.completeVariableExpression(source);
+    if (variableCompletion) return Promise.resolve(variableCompletion);
     const commandMatch = source.match(/^(get|post|put|find)\s+(\S*)$/);
     if (commandMatch) {
       const [, method, pathToken] = commandMatch;
@@ -659,6 +661,46 @@ class Backend {
       // retain cursor handling for custom REPL implementations.
       this.repl.completer(source, callback);
     });
+  }
+
+  completeVariableExpression(source) {
+    const bracketMatch = source.match(/^([A-Za-z_$][\w$]*)\[(?:(["'])([^"']*)?)?$/);
+    if (bracketMatch) {
+      const [, root, quote, partial = ''] = bracketMatch;
+      const value = globalThis[root];
+      if (!value || typeof value !== 'object') return null;
+      const prefix = quote ? `${root}[${quote}` : `${root}["`;
+      const suffix = quote || '"';
+      return {
+        candidates: Object.getOwnPropertyNames(value)
+          .filter((key) => key !== 'recorder')
+          .filter((key) => key.startsWith(partial))
+          .map((key) => `${prefix}${key}${suffix}]`),
+        replacement: source
+      };
+    }
+
+    const dotMatch = source.match(/^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)?$/);
+    if (dotMatch) {
+      const [, root, partial = ''] = dotMatch;
+      const value = globalThis[root];
+      if (!value || typeof value !== 'object') return null;
+      return {
+        candidates: Object.getOwnPropertyNames(value)
+          .filter((key) => key !== 'recorder')
+          .filter((key) => key.startsWith(partial))
+          .map((key) => `${root}.${key}`),
+        replacement: source
+      };
+    }
+
+    if (/^[A-Za-z_$][\w$]*$/.test(source) &&
+        Object.prototype.hasOwnProperty.call(globalThis, source) &&
+        globalThis[source] &&
+        typeof globalThis[source] === 'object') {
+      return { candidates: [`${source}[`], replacement: source };
+    }
+    return null;
   }
 
   expandCompletionPath(pathToken) {
