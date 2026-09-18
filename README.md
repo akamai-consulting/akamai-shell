@@ -113,6 +113,24 @@ with status 0 on normal completion or an explicit `exit`/`quit`. This is a
 minimal, currently supported subset of script execution; see #65 for further
 script-mode work such as positional arguments.
 
+A JavaScript statement may span multiple lines; consecutive lines are joined
+until brackets, braces, parentheses, and quotes are balanced, so a `for`/`if`
+block or multi-line object/array literal executes as one statement:
+
+```bash
+#!/usr/bin/env akamai-shell
+data = []
+for (let i = 0; i < 100; i++) {
+  data[i] = $('get /papi/v1/properties')
+}
+show data
+```
+
+A script that ends with an unterminated statement (e.g. a missing closing
+brace) exits with a non-zero status and a clear error. This multi-line
+joining currently applies only to script files, not the interactive shell,
+where each line is still executed as it is entered.
+
 ## Quick command reference
 
 | Command | Purpose |

@@ -12,6 +12,61 @@ function stripShebang(content) {
   return newlineIndex === -1 ? '' : content.slice(newlineIndex + 1);
 }
 
+// Determines whether `source` (one or more joined script lines) forms a
+// balanced, complete statement: every bracket/brace/paren is closed, no
+// string or block comment is left open. This allows a JavaScript construct
+// such as a `for`/`if` block or a multi-line object/array literal to span
+// several script lines while still executing as a single statement.
+function isStatementComplete(source) {
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const next = source[index + 1];
+    if (lineComment) {
+      if (character === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (character === '*' && next === '/') {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === '/' && next === '/') {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (character === '/' && next === '*') {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+      continue;
+    }
+    if (character === '(' || character === '[' || character === '{') depth += 1;
+    else if (character === ')' || character === ']' || character === '}') depth -= 1;
+  }
+  return depth <= 0 && !quote && !blockComment;
+}
+
 async function runScript(filePath, { output = process.stdout, errorOutput = process.stderr } = {}) {
   let content;
   try {
@@ -33,18 +88,27 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
   const repl = createRepl(replOutput, replInput, undefined, null);
 
   let exitCode = 0;
+  let pendingStatement = '';
   try {
     for (const line of lines) {
-      if (!line.trim() || line.trim().startsWith('#')) continue;
+      if (!pendingStatement && (!line.trim() || line.trim().startsWith('#'))) continue;
+      pendingStatement = pendingStatement ? `${pendingStatement}\n${line}` : line;
+      if (!isStatementComplete(pendingStatement)) continue;
+      const statement = pendingStatement;
+      pendingStatement = '';
       let keepGoing;
       try {
-        keepGoing = await repl.execute(line, { output });
+        keepGoing = await repl.execute(statement, { output });
       } catch (error) {
         errorOutput.write(`Error: ${error.message}\n`);
         exitCode = 1;
         break;
       }
       if (!keepGoing) break;
+    }
+    if (exitCode === 0 && pendingStatement.trim()) {
+      errorOutput.write('Error: Unexpected end of script inside an unterminated statement\n');
+      exitCode = 1;
     }
   } finally {
     repl.rl.close();
@@ -54,4 +118,4 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
   return exitCode;
 }
 
-module.exports = { runScript, stripShebang };
+module.exports = { runScript, stripShebang, isStatementComplete };
