@@ -175,9 +175,13 @@ function parseCommand(source) {
   const tokens = words(source);
   if (!tokens.length) return null;
   const command = tokens.shift().toLowerCase();
+  if (command === '!') {
+    if (!tokens.length) throw new Error('! expects a shell command');
+    return { command, source: tokens.join(' ') };
+  }
   if (!['get', 'post', 'put', 'find', 'show', 'set', 'echo', 'history', 'record',
-    'save', 'load', 'help', 'exit', 'quit'].includes(command)) return null;
-  if (command === 'help' || command === 'exit' || command === 'quit') {
+    'save', 'load', 'help', '?', 'exit', 'quit'].includes(command)) return null;
+  if (command === '?' || command === 'help' || command === 'exit' || command === 'quit') {
     if (tokens.length) throw new Error(`${command} does not accept arguments`);
     return { command };
   }
@@ -446,11 +450,22 @@ class Backend {
     const parsed = parseCommand(expandedSource);
     if (!parsed) return (await this.evaluate(source)).value;
     this.syncSettings();
-    if (parsed.command === 'help') {
+    if (parsed.command === '?' || parsed.command === 'help') {
       return 'get <api-path> [query]\npost|put <api-path> [name=value|name:=json]\nfind <api-path> -q <match-rule>\nset <name> <value>\necho <value>\nhistory\nrecord (auto|on|off|show)\nshow\nsave [path]\nload [path]\nhelp\nexit';
     }
 
     if (parsed.command === 'exit' || parsed.command === 'quit') return { exited: true };
+    if (parsed.command === '!') {
+      return new Promise((resolve, reject) => {
+        exec(parsed.source, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+          if (error) {
+            reject(new Error(`Shell command failed: ${stderr.trim() || error.message}`));
+            return;
+          }
+          resolve(stdout);
+        });
+      });
+    }
     if (parsed.command === 'set') {
       const name = parsed.name === 'edgerc-section' ? 'edgercSection' : parsed.name;
       const value = name === 'edgerc' && parsed.value.startsWith('~')
