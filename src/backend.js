@@ -707,14 +707,13 @@ class Backend {
       const names = [...new Set(parameters.map((parameter) => parameter.name))]
         .filter((name) => name.startsWith(partial))
         .sort((left, right) => left.localeCompare(right));
-      const prefix = partial ? source.slice(0, -partial.length) : source;
       return Promise.resolve({
         candidates: names.map((name) => {
           const parameter = parameters.find((item) => item.name === name);
           const operator = method === 'get' || parameter?.in === 'query' ? '==' : '=';
-          return `${prefix}${name}${operator}`;
+          return `${name}${operator}`;
         }),
-        replacement: source
+        replacement: partial
       });
     }
 

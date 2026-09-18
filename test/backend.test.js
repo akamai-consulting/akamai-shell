@@ -319,7 +319,7 @@ test('provides JavaScript and shell completion through the backend', async () =>
   );
   assert.deepEqual(
     messages.find((message) => message.id === 29 && message.type === 'result').result.candidates,
-    ['get /papi/v1/properties contractId==', 'get /papi/v1/properties groupId==']
+    ['contractId==', 'groupId==']
   );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
   .result.candidates.includes('show'));
