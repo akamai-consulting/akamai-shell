@@ -86,6 +86,32 @@ Configuration and JSON-serializable session variables are persisted under
 `~/.config/akamai-shell/`. Credential values and secret request headers are
 never displayed or persisted by the shell.
 
+## Running scripts
+
+`akamai-shell` can execute a file of shell commands non-interactively:
+
+```bash
+akamai-shell script-file
+```
+
+This also works as an executable script with a shebang line:
+
+```bash
+#!/usr/bin/env akamai-shell
+val = 123
+echo $val
+```
+
+Make the file executable (`chmod +x script-file`) and run it directly. The
+shebang line, if present, is ignored. Script mode reuses the same command
+parser, JavaScript evaluator, variables, and pipelines as the interactive
+shell, but does not read or write the interactive session's history or saved
+environment file. The process exits with a non-zero status if a command
+fails or the script file cannot be read, and with status 0 on normal
+completion or an explicit `exit`/`quit`. This is a minimal, currently
+supported subset of script execution; see #65 for further script-mode work
+such as positional arguments.
+
 ## Quick command reference
 
 | Command | Purpose |
