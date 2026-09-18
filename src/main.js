@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const { createRepl } = require('./repl');
-const { runScript } = require('./script-runner');
+const { runInteractive, runScript } = require('./client');
 
 const args = process.argv.slice(2);
 // Supports `akamai-shell script-file` directly, including invocation through a
@@ -17,9 +16,12 @@ if (scriptFile) {
   };
   process.stdout.on('error', handleBrokenPipe);
   process.stderr.on('error', handleBrokenPipe);
-  runScript(scriptFile, { scriptArgs: args.slice(1) }).then((exitCode) => {
+  runScript(scriptFile, args.slice(1)).then((exitCode) => {
     process.exitCode = exitCode;
   });
 } else {
-  createRepl();
+  runInteractive().catch((error) => {
+    process.stderr.write(`Error: ${error.message}\n`);
+    process.exitCode = 1;
+  });
 }
