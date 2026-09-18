@@ -588,6 +588,12 @@ test('exposes common Node.js globals inside the VM context', async () => {
   assert.equal(output.read().toString(), '"function"\n');
   await repl.execute('show global === globalThis');
   assert.equal(output.read().toString(), 'true\n');
+  await repl.execute('response = await fetch("data:text/plain,hello")');
+  output.read();
+  await repl.execute('show response.status');
+  assert.equal(output.read().toString(), '200\n');
+  await repl.execute('show await response.text()');
+  assert.equal(output.read().toString(), '"hello"\n');
   await repl.execute('show await new Promise(resolve => setTimeout(() => resolve("done"), 1))');
   assert.equal(output.read().toString(), '"done"\n');
 

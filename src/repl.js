@@ -49,6 +49,41 @@ const NODE_GLOBAL_NAMES = [
   'fetch',
   'performance'
 ];
+
+function wrapHeaders(headers) {
+  return {
+    append: headers.append.bind(headers),
+    delete: headers.delete.bind(headers),
+    get: headers.get.bind(headers),
+    has: headers.has.bind(headers),
+    set: headers.set.bind(headers),
+    forEach: (callback, thisArg) => headers.forEach(callback, thisArg)
+  };
+}
+
+function wrapFetchResponse(response) {
+  return {
+    body: response.body,
+    bodyUsed: response.bodyUsed,
+    headers: wrapHeaders(response.headers),
+    ok: response.ok,
+    redirected: response.redirected,
+    status: response.status,
+    statusText: response.statusText,
+    type: response.type,
+    url: response.url,
+    arrayBuffer: response.arrayBuffer.bind(response),
+    blob: response.blob.bind(response),
+    clone: () => wrapFetchResponse(response.clone()),
+    formData: response.formData.bind(response),
+    json: response.json.bind(response),
+    text: response.text.bind(response)
+  };
+}
+
+async function fetchForVm(...arguments_) {
+  return wrapFetchResponse(await globalThis.fetch(...arguments_));
+}
 const TARGET_FIELDS = ['accountSwitchKey', 'contractId', 'groupId'];
 const CONFIG_NAMES = [
   'edgerc', 'edgercSection', 'accountSwitchKey', 'target', 'contractId', 'groupId',
@@ -1001,7 +1036,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   for (const name of NODE_GLOBAL_NAMES) {
     if (name in globalThis) {
       Object.defineProperty(variables, name, {
-        value: globalThis[name],
+        value: name === 'fetch' ? fetchForVm : globalThis[name],
         enumerable: false
       });
     }
