@@ -252,7 +252,6 @@ async function runInteractive(options = {}) {
         refreshSearch();
       } else if (key && (key.name === 'return' || key.name === 'enter')) {
         endSearch(true);
-        ttyWrite(character, key);
       } else if (key && (key.name === 'escape' || (key.ctrl && key.name === 'g'))) {
         endSearch(false);
       } else if (key && key.name === 'backspace') {
