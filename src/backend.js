@@ -769,13 +769,18 @@ class Backend {
   }
 
   contextHelp(source) {
-    const match = String(source).match(/^(get|post|put)\s+(\S+)\s+$/);
+    const match = String(source).match(/^(get|post|put)\s+(\S+)(?:\s+(\S*))?\s*$/);
     if (!match) return [];
-    const [, method, pathToken] = match;
+    const [, method, pathToken, partial = ''] = match;
     const apiPath = this.expandCompletionPath(pathToken);
     const parameters = this.apiRegistry.parameterHelp(method.toUpperCase(), apiPath);
+    const operatorMatch = partial.match(/^(.*?)(:|==|=)$/);
+    const namePartial = operatorMatch ? operatorMatch[1] : partial;
     const seen = new Set();
     const entries = parameters.reduce((result, parameter) => {
+      if (operatorMatch
+        ? parameter.name !== namePartial
+        : !parameter.name.startsWith(namePartial)) return result;
       if (seen.has(parameter.name)) return result;
       seen.add(parameter.name);
       const description = String(parameter.description || '')

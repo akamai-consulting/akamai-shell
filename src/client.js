@@ -17,6 +17,23 @@ function formatResult(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+function isInsideQuotes(source, cursor) {
+  let quote;
+  let escaped = false;
+  for (const character of source.slice(0, cursor)) {
+    if (escaped) {
+      escaped = false;
+    } else if (character === '\\' && quote !== "'") {
+      escaped = true;
+    } else if (quote) {
+      if (character === quote) quote = undefined;
+    } else if (character === "'" || character === '"') {
+      quote = character;
+    }
+  }
+  return Boolean(quote);
+}
+
 class BackendClient {
   constructor(options = {}) {
     this.backendPath = options.backendPath || path.join(__dirname, 'backend.js');
@@ -236,12 +253,12 @@ async function runInteractive(options = {}) {
     };
 
     const showContextHelp = () => {
-      if (rl.cursor !== rl.line.length ||
-          !/\s$/.test(rl.line) ||
-          !/^(?:get|post|put)\s+\S+\s+$/.test(rl.line)) {
+      const source = rl.line.slice(0, rl.cursor);
+      if (isInsideQuotes(rl.line, rl.cursor) ||
+          !/^(?:get|post|put)\s+\S+/.test(source)) {
         return false;
       }
-      backend.contextHelp(rl.line).then((entries) => {
+      backend.contextHelp(source).then((entries) => {
         output.write('\n');
         for (const entry of entries) {
           output.write(`  ${entry.name}${entry.description ? ` - ${entry.description}` : ''}\n`);
