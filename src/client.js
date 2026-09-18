@@ -5,7 +5,7 @@ const path = require('node:path');
 const readline = require('node:readline');
 const { spawn } = require('node:child_process');
 
-const { isStatementComplete } = require('./script-runner');
+const { isStatementComplete } = require('./statement-completion');
 
 const SHELL_COMMAND_PATTERN =
   /^(?:get|post|put|find|show|set|echo|record|history|help|\?|exit|quit|!)(?:\s|$)/;
