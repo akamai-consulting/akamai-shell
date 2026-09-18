@@ -709,7 +709,7 @@ class Backend {
       const apiPath = this.expandCompletionPath(pathToken);
       const parameters = this.apiRegistry.parameterHelp(
         method === 'find' ? 'GET' : method.toUpperCase(), apiPath);
-      const operatorMatch = partial.match(/^(.*?)(:|==|=)$/);
+      const operatorMatch = partial.match(/^(.*?)(:=|==|=|:)$/);
       const namePartial = operatorMatch ? operatorMatch[1] : partial;
       const names = [...new Set(parameters.map((parameter) => parameter.name))]
         .filter((name) => operatorMatch
@@ -774,7 +774,7 @@ class Backend {
     const [, method, pathToken, partial = ''] = match;
     const apiPath = this.expandCompletionPath(pathToken);
     const parameters = this.apiRegistry.parameterHelp(method.toUpperCase(), apiPath);
-    const operatorMatch = partial.match(/^(.*?)(:|==|=)$/);
+    const operatorMatch = partial.match(/^(.*?)(:=|==|=|:)$/);
     const namePartial = operatorMatch ? operatorMatch[1] : partial;
     const seen = new Set();
     const entries = parameters.reduce((result, parameter) => {
