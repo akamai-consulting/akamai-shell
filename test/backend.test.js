@@ -154,6 +154,26 @@ test('pipes every command result, including help and shell escapes', async () =>
   await backend.shutdown();
 });
 
+test('provides contextual help for settings and API parameters', async () => {
+  const registry = {
+    parameterHelp: () => [{ name: 'contractId' }, { name: 'groupId' }, { name: 'contractId' }]
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write('{"id":50,"type":"command","source":"set logLevel ?"}\n');
+  input.write('{"id":51,"type":"command","source":"get /papi/v1/properties ?"}\n');
+  await settle();
+  await backend.queue;
+  assert.deepEqual(
+    messages.find((message) => message.id === 50 && message.type === 'result').result,
+    ['debug', 'info', 'warn', 'error']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 51 && message.type === 'result').result,
+    ['contractId', 'groupId']
+  );
+  await backend.shutdown();
+});
+
 test('exposes config target values to API dispatch', async () => {
   const calls = [];
   const registry = {
