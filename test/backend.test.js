@@ -175,13 +175,14 @@ test('exposes config target values to API dispatch', async () => {
   await backend.shutdown();
 });
 
-test('show exposes the current session state', async () => {
+test('set and show expose the current session state', async () => {
   const { input, messages, backend } = harness();
-  input.write('{"id":5,"type":"evaluate","source":"config.edgercSection = \\"staging\\""}\n');
+  input.write('{"id":5,"type":"command","source":"set edgerc-section staging"}\n');
   input.write('{"id":51,"type":"evaluate","source":"visibleValue = 42"}\n');
   input.write('{"id":6,"type":"command","source":"show"}\n');
   await settle();
   await backend.queue;
+  assert.equal(messages.find((message) => message.id === 5 && message.type === 'result').result['edgerc-section'], 'staging');
   const state = messages.find((message) => message.id === 6 && message.type === 'result').result;
   assert.equal(state.config.edgercSection, 'staging');
   assert.equal(state.visibleValue, 42);
@@ -262,6 +263,7 @@ test('provides JavaScript and shell completion through the backend', async () =>
   const { input, messages, backend } = harness({ apiRegistry: registry });
   input.write('{"id":12,"type":"complete","source":"get /papi/v1/pr"}\n');
   input.write('{"id":13,"type":"complete","source":"sho"}\n');
+  input.write('{"id":27,"type":"complete","source":"set edg"}\n');
   input.write('{"id":14,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
   input.write('{"id":15,"type":"complete","source":"get $pp/"}\n');
   input.write('{"id":18,"type":"evaluate","source":"config = { edgercSection: \\"papi\\", target: { groupId: \\"grp\\", contractId: \\"ctr\\" } }"}\n');
@@ -281,6 +283,10 @@ test('provides JavaScript and shell completion through the backend', async () =>
   );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
   .result.candidates.includes('show'));
+  assert.deepEqual(
+  messages.find((message) => message.id === 27 && message.type === 'result').result.candidates,
+  ['set edgerc', 'set edgerc-section', 'set edgercSection']
+  );
   assert.deepEqual(
     messages.find((message) => message.id === 15 && message.type === 'result').result.candidates,
     ['$pp/versions']

@@ -181,7 +181,7 @@ function parseCommand(source) {
     return { command, source: tokens.join(' ') };
   }
   if (!['get', 'post', 'put', 'find', 'show', 'echo', 'history', 'record',
-    'save', 'load', 'help', '?', 'exit', 'quit'].includes(command)) return null;
+    'set', 'save', 'load', 'help', '?', 'exit', 'quit'].includes(command)) return null;
   if (command === '?' || command === 'help' || command === 'exit' || command === 'quit') {
     if (tokens.length) throw new Error(`${command} does not accept arguments`);
     return { command };
@@ -206,6 +206,10 @@ function parseCommand(source) {
   }
   if (command === 'show') {
     return { command, name: source.trim().slice(command.length).trim() };
+  }
+  if (command === 'set') {
+    if (tokens.length < 2) throw new Error('Usage: set <name> <value>');
+    return { command, name: tokens.shift(), value: tokens.join(' ') };
   }
   if (!tokens.length || !tokens[0].startsWith('/')) throw new Error(`Usage: ${command} <api-path>`);
   const rawPath = tokens.shift();
@@ -451,7 +455,7 @@ class Backend {
     if (!parsed) return (await this.evaluate(source)).value;
     this.syncSettings();
     if (parsed.command === '?' || parsed.command === 'help') {
-      return 'get <api-path> [query]\npost|put <api-path> [name=value|name:=json]\nfind <api-path> -q <match-rule>\necho <value>\nhistory\nrecord (auto|on|off|show)\nshow\nsave [path]\nload [path]\nhelp\nexit';
+      return 'get <api-path> [query]\npost|put <api-path> [name=value|name:=json]\nfind <api-path> -q <match-rule>\nset <name> <value>\necho <value>\nhistory\nrecord (auto|on|off|show)\nshow\nsave [path]\nload [path]\nhelp\nexit';
     }
 
     if (parsed.command === 'exit' || parsed.command === 'quit') return { exited: true };
@@ -465,6 +469,18 @@ class Backend {
           resolve(stdout);
         });
       });
+    }
+    if (parsed.command === 'set') {
+      const name = parsed.name === 'edgerc-section' ? 'edgercSection' : parsed.name;
+      const value = name === 'edgerc' && parsed.value.startsWith('~')
+        ? path.join(os.homedir(), parsed.value.slice(2)) : parsed.value;
+      if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error(`Invalid setting name "${parsed.name}"`);
+      this.settings[name] = value;
+      this.settings.parameterDefaults[name] = value;
+      if (['accountSwitchKey', 'contractId', 'groupId'].includes(name)) {
+        this.settings.target[name] = value;
+      }
+      return { [parsed.name]: value };
     }
     if (parsed.command === 'echo') {
       return parsed.words.map((word) => {
@@ -668,7 +684,19 @@ class Backend {
       }));
     }
 
-    const shellCommands = ['get', 'post', 'put', 'find', 'show', 'echo', 'history',
+    const setMatch = source.match(/^set\s+(\S*)$/);
+    if (setMatch) {
+      const knownSettings = ['accountSwitchKey', 'contractId', 'edgerc', 'edgerc-section',
+        'edgercSection', 'groupId', 'logLevel', 'logOutput', 'recordMode', 'target', 'timeout'];
+      const partial = setMatch[1];
+      return Promise.resolve({
+        candidates: knownSettings
+          .filter((name) => name.startsWith(partial))
+          .map((name) => `set ${name}`),
+        replacement: `set ${partial}`
+      });
+    }
+    const shellCommands = ['get', 'post', 'put', 'find', 'show', 'set', 'echo', 'history',
       'record', 'save', 'load', 'help', 'exit', 'quit'];
     if (/^[A-Za-z_$][\w$]*$/.test(source)) {
       return new Promise((resolve, reject) => {

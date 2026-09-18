@@ -181,6 +181,7 @@ the backend's `globalThis`.
 | `get -f <file> <api-path>` | Write formatted GET JSON to a file. |
 | `post|put -f <file> <api-path>` | Read a JSON request body from a file. |
 | `find <api-path> -q <rule>` | Fetch one response and find matching dictionaries locally. |
+| `set <name> <value>` | Set a known configuration value; JavaScript assignment supports arbitrary values. |
 | `show [expression]` | Display the session namespace or one JSON value. |
 | `echo <text> [\| command]` | Print expanded text, optionally through a local shell pipeline. |
 | `record auto\|on\|off` | Control redacted in-memory request recording; `auto` keeps the latest request only. |
