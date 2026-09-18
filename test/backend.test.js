@@ -83,6 +83,26 @@ test('dispatches get commands through the API registry', async () => {
   await backend.shutdown();
 });
 
+test('exposes config with synchronized target values', async () => {
+  const calls = [];
+  const registry = {
+    get: async (settings) => {
+      calls.push(settings);
+      return { statusCode: 200, body: { ok: true } };
+    }
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write('{"id":41,"type":"evaluate","source":"config[\\"target\\"].contractId = \\"ctr_target\\""}\n');
+  input.write('{"id":42,"type":"evaluate","source":"config.target = { contractId: \\"ctr_replaced\\", groupId: \\"grp_target\\" }"}\n');
+  input.write('{"id":43,"type":"command","source":"get /papi/v1/properties"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(messages.find((message) => message.id === 41 && message.type === 'result').result.value, 'ctr_target');
+  assert.equal(calls[0].target.contractId, 'ctr_replaced');
+  assert.equal(calls[0].groupId, 'grp_target');
+  await backend.shutdown();
+});
+
 test('set and show expose only non-sensitive backend settings', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":5,"type":"command","source":"set edgerc-section staging"}\n');

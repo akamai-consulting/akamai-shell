@@ -52,6 +52,40 @@ function loadSettings(options) {
   return settings;
 }
 
+function bindConfig(settings) {
+  const targetFields = new Set(['accountSwitchKey', 'contractId', 'groupId']);
+  let targetProxy;
+  const makeTargetProxy = (target) => new Proxy(target, {
+    set(targetObject, name, value) {
+      Reflect.set(targetObject, name, value);
+      if (targetFields.has(name)) settings[name] = value;
+      return true;
+    }
+  });
+  targetProxy = makeTargetProxy(settings.target || {});
+  settings.target = targetProxy;
+  return new Proxy(settings, {
+    get(targetObject, name) {
+      return Reflect.get(targetObject, name);
+    },
+    set(targetObject, name, value) {
+      if (name === 'target') {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error('config.target must be an object');
+        }
+        targetProxy = makeTargetProxy(value);
+        for (const field of targetFields) {
+          if (value[field] !== undefined) targetObject[field] = value[field];
+        }
+        return Reflect.set(targetObject, name, targetProxy);
+      }
+      Reflect.set(targetObject, name, value);
+      if (targetFields.has(name)) targetProxy[name] = value;
+      return true;
+    }
+  });
+}
+
 function words(source) {
   const result = [];
   let current = '';
@@ -133,6 +167,7 @@ class Backend {
     this.timeout = Number.isFinite(options.timeout) ? options.timeout : DEFAULT_TIMEOUT;
     this.standalone = options.standalone === true;
     this.settings = loadSettings(options);
+    this.config = bindConfig(this.settings);
     this.requestGet = options.requestGet;
     this.apiRegistry = options.apiRegistry || apiRegistry;
     this.completionCache = new Map();
@@ -140,6 +175,7 @@ class Backend {
     this.settings.recorder = createRecorder();
     this.settings.recorder.setMode(this.settings.recordMode || 'auto');
     this.initialGlobals = new Set(Object.keys(globalThis));
+    globalThis.config = this.config;
     this.closed = false;
     this.queue = Promise.resolve();
     this.buffer = '';
