@@ -217,10 +217,13 @@ function parseCommand(source) {
   const query = Object.fromEntries(new URLSearchParams(queryString || ''));
   const body = {};
   for (const token of tokens) {
-    const match = token.match(/^([^:=]+)(:=|=)(.*)$/);
+    const match = token.match(/^([^:=]+)(==|:=|=)(.*)$/);
     if (!match) throw new Error(`Invalid ${command} argument "${token}"`);
     const [, name, operator, value] = match;
-    if (command === 'get') query[name] = value;
+    if (operator === '==') query[name] = value;
+    else if (command === 'get') {
+      throw new Error(`GET query argument "${token}" must use name==value`);
+    }
     else if (operator === ':=') {
       try { body[name] = JSON.parse(value); } catch (error) {
         throw new Error(`Invalid JSON value for ${name}: ${error.message}`);
@@ -706,7 +709,11 @@ class Backend {
         .sort((left, right) => left.localeCompare(right));
       const prefix = partial ? source.slice(0, -partial.length) : source;
       return Promise.resolve({
-        candidates: names.map((name) => `${prefix}${name}=`),
+        candidates: names.map((name) => {
+          const parameter = parameters.find((item) => item.name === name);
+          const operator = method === 'get' || parameter?.in === 'query' ? '==' : '=';
+          return `${prefix}${name}${operator}`;
+        }),
         replacement: source
       });
     }
@@ -767,7 +774,8 @@ class Backend {
         .replace(/\s+/g, ' ')
         .trim()
         .split(/(?<=[.!?])\s+/)[0];
-      result.push({ name: parameter.name, description });
+      const operator = method === 'get' || parameter.in === 'query' ? '==' : '=';
+      result.push({ name: `${parameter.name}${operator}`, description });
       return result;
     }, []);
     return entries.sort((left, right) => left.name.localeCompare(right.name));

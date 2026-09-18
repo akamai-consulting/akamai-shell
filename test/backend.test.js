@@ -95,13 +95,38 @@ test('dispatches get commands through the API registry', async () => {
   };
   const requestGet = () => {};
   const { input, messages, backend } = harness({ apiRegistry: registry, requestGet });
-  input.write('{"id":4,"type":"command","source":"get /papi/v1/properties?groupId=grp contractId=ctr"}\n');
+  input.write('{"id":4,"type":"command","source":"get /papi/v1/properties?groupId=grp contractId==ctr"}\n');
   await settle();
   await backend.queue;
   assert.deepEqual(messages.find((message) => message.id === 4 && message.type === 'result').result, { ok: true });
   assert.equal(calls[0].apiPath, '/papi/v1/properties');
   assert.deepEqual(calls[0].query, { groupId: 'grp', contractId: 'ctr' });
   assert.equal(calls[0].requestGet, requestGet);
+  await backend.shutdown();
+});
+
+test('parses HTTPie-style query and JSON body arguments', async () => {
+  const calls = [];
+  const registry = {
+    dispatch: async (method, settings, apiPath, query, body) => {
+      calls.push({ method, apiPath, query, body });
+      return { statusCode: 200, body: { ok: true } };
+    }
+  };
+  const { input, backend } = harness({ apiRegistry: registry });
+  input.write(JSON.stringify({
+    id: 53,
+    type: 'command',
+    source: 'post /example q==bar name=hello tags:=[1,2]'
+  }) + '\n');
+  await settle();
+  await backend.queue;
+  assert.deepEqual(calls[0], {
+    method: 'POST',
+    apiPath: '/example',
+    query: { q: 'bar' },
+    body: { name: 'hello', tags: [1, 2] }
+  });
   await backend.shutdown();
 });
 
@@ -294,7 +319,7 @@ test('provides JavaScript and shell completion through the backend', async () =>
   );
   assert.deepEqual(
     messages.find((message) => message.id === 29 && message.type === 'result').result.candidates,
-    ['get /papi/v1/properties contractId=', 'get /papi/v1/properties groupId=']
+    ['get /papi/v1/properties contractId==', 'get /papi/v1/properties groupId==']
   );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
   .result.candidates.includes('show'));
@@ -344,8 +369,8 @@ test('provides JavaScript and shell completion through the backend', async () =>
 test('provides OpenAPI parameter context help without changing the input', async () => {
   const registry = {
     parameterHelp: () => [
-      { name: 'groupId', description: 'The group identifier.' },
-      { name: 'contractId', description: 'The contract identifier. Used for filtering.' },
+      { name: 'groupId', in: 'query', description: 'The group identifier.' },
+      { name: 'contractId', in: 'query', description: 'The contract identifier. Used for filtering.' },
       { name: 'contractId', description: 'Duplicate entry.' }
     ]
   };
@@ -360,8 +385,8 @@ test('provides OpenAPI parameter context help without changing the input', async
   assert.deepEqual(
     messages.find((message) => message.id === 52 && message.type === 'result').result,
     [
-      { name: 'contractId', description: 'The contract identifier.' },
-      { name: 'groupId', description: 'The group identifier.' }
+      { name: 'contractId==', description: 'The contract identifier.' },
+      { name: 'groupId==', description: 'The group identifier.' }
     ]
   );
   await backend.shutdown();
