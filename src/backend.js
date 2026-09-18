@@ -493,12 +493,12 @@ class Backend {
   complete(code, cursor) {
     this.syncSettings();
     const source = String(code || '').slice(0, Number.isInteger(cursor) ? cursor : undefined);
-    const commandMatch = source.match(/^(get|post|put)\s+(\S*)$/);
+    const commandMatch = source.match(/^(get|post|put|find)\s+(\S*)$/);
     if (commandMatch) {
       const [, method, pathToken] = commandMatch;
-      const inputPath = pathToken || '/';
+      const inputPath = this.expandCompletionPath(pathToken || '/');
       return this.apiRegistry.completeMethod(
-        method.toUpperCase(),
+        method === 'find' ? 'GET' : method.toUpperCase(),
         inputPath,
         this.settings,
         this.completionCache,
@@ -511,6 +511,7 @@ class Backend {
         replacement: pathToken
       }));
     }
+
     const shellCommands = ['get', 'post', 'put', 'find', 'show', 'set', 'echo', 'history',
       'record', 'save', 'load', 'help', 'exit', 'quit'];
     if (/^[A-Za-z_$][\w$]*$/.test(source)) {
@@ -538,6 +539,14 @@ class Backend {
       // Node's public REPL completer currently accepts (line, callback);
       // retain cursor handling for custom REPL implementations.
       this.repl.completer(source, callback);
+    });
+  }
+
+  expandCompletionPath(pathToken) {
+    return pathToken.replace(/\$([A-Za-z_$][\w$]*)/g, (match, name) => {
+      const value = globalThis[name];
+      if (typeof value === 'string' || typeof value === 'number') return String(value);
+      return match;
     });
   }
 

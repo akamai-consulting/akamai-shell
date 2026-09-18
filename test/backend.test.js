@@ -179,11 +179,18 @@ test('provides command substitution in native JavaScript evaluation', async () =
 
 test('provides JavaScript and shell completion through the backend', async () => {
   const registry = {
-    completeMethod: async () => [['/papi/v1/properties'], '/papi/v1/pr']
+    completeMethod: async (method, inputPath) => {
+      if (inputPath === '/papi/v1/properties/prp_526230/') {
+        return [['/papi/v1/properties/prp_526230/versions'], inputPath];
+      }
+      return [['/papi/v1/properties'], '/papi/v1/pr'];
+    }
   };
   const { input, messages, backend } = harness({ apiRegistry: registry });
   input.write('{"id":12,"type":"complete","source":"get /papi/v1/pr"}\n');
   input.write('{"id":13,"type":"complete","source":"set"}\n');
+  input.write('{"id":14,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
+  input.write('{"id":15,"type":"complete","source":"get $pp/"}\n');
   await settle();
   await backend.queue;
   assert.deepEqual(
@@ -192,23 +199,27 @@ test('provides JavaScript and shell completion through the backend', async () =>
   );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
     .result.candidates.includes('set'));
+  assert.deepEqual(
+    messages.find((message) => message.id === 15 && message.type === 'result').result.candidates,
+    ['$pp/versions']
+  );
   await backend.shutdown();
 });
 
 test('initializes native script module bindings and arguments', async () => {
   const { input, messages, backend } = harness();
   input.write(JSON.stringify({
-    id: 14,
+    id: 16,
     type: 'initialize',
     scriptPath: '/tmp/example-script.as',
     scriptArgs: ['one', 'two'],
     workingDirectory: '/tmp'
   }) + '\n');
-  input.write('{"id":15,"type":"evaluate","source":"[process.argv[1], process.argv[2], __dirname, typeof require]"}\n');
+  input.write('{"id":17,"type":"evaluate","source":"[process.argv[1], process.argv[2], __dirname, typeof require]"}\n');
   await settle();
   await backend.queue;
   assert.deepEqual(
-    messages.find((message) => message.id === 15 && message.type === 'result').result.value,
+    messages.find((message) => message.id === 17 && message.type === 'result').result.value,
     ['/tmp/example-script.as', 'one', '/tmp', 'function']
   );
   await backend.shutdown();
