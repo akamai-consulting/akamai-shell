@@ -177,6 +177,36 @@ test('provides command substitution in native JavaScript evaluation', async () =
   await backend.shutdown();
 });
 
+test('automatically awaits substitutions interactively but not in scripts', async () => {
+  const registry = {
+    get: async () => ({ statusCode: 200, body: { path: '/properties/prp_1' } })
+  };
+  const interactive = harness({ apiRegistry: registry });
+  interactive.input.write('{"id":30,"type":"evaluate","source":"$(\\"get /papi/v1/properties\\").path"}\n');
+  await settle();
+  await interactive.backend.queue;
+  assert.equal(
+    interactive.messages.find((message) => message.id === 30 && message.type === 'result').result.value,
+    '/properties/prp_1'
+  );
+  await interactive.backend.shutdown();
+
+  const script = harness({ apiRegistry: registry });
+  script.input.write(JSON.stringify({
+    id: 31,
+    type: 'initialize',
+    scriptPath: '/tmp/example-script.as'
+  }) + '\n');
+  script.input.write('{"id":32,"type":"evaluate","source":"typeof $(\\"get /papi/v1/properties\\").then"}\n');
+  await settle();
+  await script.backend.queue;
+  assert.equal(
+    script.messages.find((message) => message.id === 32 && message.type === 'result').result.value,
+    'function'
+  );
+  await script.backend.shutdown();
+});
+
 test('provides JavaScript and shell completion through the backend', async () => {
   const registry = {
     completeMethod: async (method, inputPath) => {
