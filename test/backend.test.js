@@ -168,6 +168,21 @@ test('provides command substitution in native JavaScript evaluation', async () =
   await backend.shutdown();
 });
 
+test('automatically awaits command substitution before property access', async () => {
+  const registry = {
+    get: async () => ({ statusCode: 200, body: { properties: [{ path: '/papi/v1/properties/prp_1' }] } })
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write('{"id":13,"type":"evaluate","source":"$(\\"get /papi/v1/properties\\").properties[0].path"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(
+    messages.find((message) => message.id === 13 && message.type === 'result').result.value,
+    '/papi/v1/properties/prp_1'
+  );
+  await backend.shutdown();
+});
+
 test('provides JavaScript and shell completion through the backend', async () => {
   const registry = {
     completeMethod: async () => [['/papi/v1/properties'], '/papi/v1/pr']
