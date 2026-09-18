@@ -105,12 +105,13 @@ echo $val
 Make the file executable (`chmod +x script-file`) and run it directly. The
 shebang line, if present, is ignored. Script mode reuses the same command
 parser, JavaScript evaluator, variables, and pipelines as the interactive
-shell, but does not read or write the interactive session's history or saved
-environment file. The process exits with a non-zero status if a command
-fails or the script file cannot be read, and with status 0 on normal
-completion or an explicit `exit`/`quit`. This is a minimal, currently
-supported subset of script execution; see #65 for further script-mode work
-such as positional arguments.
+shell, and loads the saved `config` values and variables from
+`~/.config/akamai-shell/env` at startup, but never persists changes back to
+that file or to the interactive session's history. The process exits with a
+non-zero status if a command fails or the script file cannot be read, and
+with status 0 on normal completion or an explicit `exit`/`quit`. This is a
+minimal, currently supported subset of script execution; see #65 for further
+script-mode work such as positional arguments.
 
 ## Quick command reference
 

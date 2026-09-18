@@ -80,3 +80,47 @@ test('does not create any scratch files or directories while running a script', 
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('loads the saved config and variables at startup without writing them back', async () => {
+  // Point os.homedir() at a fixture HOME for this isolated test process so the
+  // real interactive-session environment file is never touched. Modules that
+  // resolve the environment file path at load time must be required after
+  // HOME is set.
+  const originalHome = process.env.HOME;
+  const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-script-test-home-'));
+  process.env.HOME = homeDirectory;
+  const envDirectory = path.join(homeDirectory, '.config', 'akamai-shell');
+  fs.mkdirSync(envDirectory, { recursive: true });
+  const envFile = path.join(envDirectory, 'env');
+  const savedEnvironment = {
+    parameters: { edgercSection: 'papi' },
+    variables: { pid: 526230 }
+  };
+  fs.writeFileSync(envFile, `${JSON.stringify(savedEnvironment, null, 2)}\n`);
+  const before = fs.statSync(envFile).mtimeMs;
+
+  delete require.cache[require.resolve('../src/repl')];
+  delete require.cache[require.resolve('../src/script-runner')];
+  const { runScript: runIsolatedScript } = require('../src/script-runner');
+
+  try {
+    const scriptFile = path.join(homeDirectory, 'script.sh');
+    fs.writeFileSync(scriptFile, '#!/usr/bin/env akamai-shell\necho $pid\necho $config.edgercSection\n');
+    const output = new PassThrough();
+    const errorOutput = new PassThrough();
+    let captured = '';
+    output.on('data', (chunk) => { captured += chunk.toString(); });
+
+    const exitCode = await runIsolatedScript(scriptFile, { output, errorOutput });
+
+    assert.equal(exitCode, 0);
+    assert.equal(captured, '526230\n"papi"\n');
+    assert.deepEqual(JSON.parse(fs.readFileSync(envFile, 'utf8')), savedEnvironment);
+    assert.equal(fs.statSync(envFile).mtimeMs, before);
+  } finally {
+    process.env.HOME = originalHome;
+    delete require.cache[require.resolve('../src/repl')];
+    delete require.cache[require.resolve('../src/script-runner')];
+    fs.rmSync(homeDirectory, { recursive: true, force: true });
+  }
+});

@@ -811,13 +811,14 @@ function runShellCommandCapture(command, input) {
 
 function createRepl(output = process.stdout, input = process.stdin, requestGet, historyFile = HISTORY_FILE) {
   // A null historyFile requests an ephemeral session (used for script execution):
-  // history and the parameter/variable environment are kept in memory only and
-  // nothing is read from or written to disk.
+  // history and the parameter/variable environment are never written to disk.
+  // The saved environment is still loaded at startup so that `.edgerc`,
+  // section, and variables configured interactively are available to scripts.
   const persistent = historyFile !== null;
   const parameterFile = !persistent
     ? null
     : historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env');
-  const environment = parameterFile === null ? { parameters: {}, variables: {} } : loadEnvironment(parameterFile);
+  const environment = loadEnvironment(parameterFile === null ? ENV_FILE : parameterFile);
   const parameterDefaults = environment.parameters;
   const target = targetFromParameters(parameterDefaults);
   const settingsTarget = {
