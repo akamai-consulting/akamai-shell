@@ -110,6 +110,16 @@ test('expands variables in non-JavaScript command input', async () => {
   await backend.shutdown();
 });
 
+test('pipes show output through local shell commands', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":46,"type":"command","source":"show config | head -1"}\n');
+  await settle();
+  await backend.queue;
+  const result = messages.find((message) => message.id === 46 && message.type === 'result').result;
+  assert.match(result, /^\{\n/);
+  await backend.shutdown();
+});
+
 test('exposes config target values to API dispatch', async () => {
   const calls = [];
   const registry = {

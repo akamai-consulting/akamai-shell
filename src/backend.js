@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
+const { exec } = require('node:child_process');
 const { PassThrough } = require('node:stream');
 const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
@@ -118,6 +119,35 @@ function transformCommandSubstitutions(source) {
     index = close - 1;
   }
   return result;
+}
+
+function splitPipeline(source) {
+  let quote = '';
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+    } else if (character === '|') {
+      const left = source.slice(0, index).trim();
+      const right = source.slice(index + 1).trim();
+      if (!left || !right) throw new Error('Pipeline requires commands on both sides');
+      return { left, right };
+    }
+  }
+  return null;
 }
 
 function words(source) {
@@ -396,6 +426,22 @@ class Backend {
   }
 
   async command(source) {
+    const pipeline = splitPipeline(source);
+    if (pipeline) {
+      const result = await this.command(pipeline.left);
+      const input = result === undefined
+        ? ''
+        : (typeof result === 'string' ? result : `${JSON.stringify(result, null, 2)}\n`);
+      return new Promise((resolve, reject) => {
+        exec(pipeline.right, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+          if (error) {
+            reject(new Error(`Pipeline command failed: ${stderr.trim() || error.message}`));
+            return;
+          }
+          resolve(stdout);
+        }).stdin?.end(input);
+      });
+    }
     const expandedSource = this.expandCommandVariables(source);
     const parsed = parseCommand(expandedSource);
     if (!parsed) return (await this.evaluate(source)).value;
