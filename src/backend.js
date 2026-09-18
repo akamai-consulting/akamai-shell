@@ -8,6 +8,8 @@ const Module = require('node:module');
 const { PassThrough } = require('node:stream');
 const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
+const { findResources } = require('./find');
+const { createRecorder } = require('./recorder');
 
 const DEFAULT_TIMEOUT = 1000;
 const DEFAULT_STATE_FILE = path.join(process.cwd(), '.akamai-shell-state.js');
@@ -75,7 +77,8 @@ function parseCommand(source) {
   const tokens = words(source);
   if (!tokens.length) return null;
   const command = tokens.shift().toLowerCase();
-  if (!['get', 'post', 'put', 'show', 'set', 'save', 'load', 'help', 'exit', 'quit'].includes(command)) return null;
+  if (!['get', 'post', 'put', 'find', 'show', 'set', 'echo', 'history', 'record',
+    'save', 'load', 'help', 'exit', 'quit'].includes(command)) return null;
   if (command === 'help' || command === 'exit' || command === 'quit') {
     if (tokens.length) throw new Error(`${command} does not accept arguments`);
     return { command };
@@ -83,6 +86,20 @@ function parseCommand(source) {
   if (command === 'save' || command === 'load') {
     if (tokens.length > 1) throw new Error(`${command} accepts at most one path`);
     return { command, filePath: tokens[0] || DEFAULT_STATE_FILE };
+  }
+  if (command === 'echo') return { command, words: tokens };
+  if (command === 'history') {
+    if (tokens.length) throw new Error('history does not accept arguments');
+    return { command };
+  }
+  if (command === 'record') return { command, action: tokens.shift(), options: tokens };
+  if (command === 'find') {
+    if (!tokens.length) throw new Error('Usage: find <api-path> -q <match-rule>');
+    const apiPath = tokens.shift();
+    if (tokens.length !== 2 || tokens[0] !== '-q') {
+      throw new Error('Usage: find <api-path> -q <match-rule>');
+    }
+    return { command, apiPath, query: tokens[1] };
   }
   if (command === 'show') return { command, name: tokens.join(' ') };
   if (command === 'set') {
@@ -119,6 +136,9 @@ class Backend {
     this.requestGet = options.requestGet;
     this.apiRegistry = options.apiRegistry || apiRegistry;
     this.completionCache = new Map();
+    this.history = [];
+    this.settings.recorder = createRecorder();
+    this.settings.recorder.setMode(this.settings.recordMode || 'auto');
     this.initialGlobals = new Set(Object.keys(globalThis));
     this.closed = false;
     this.queue = Promise.resolve();
@@ -182,6 +202,9 @@ class Backend {
       return;
     }
     const id = request.id;
+    if (request.type === 'evaluate' || request.type === 'command') {
+      this.history.push(request.source || request.code || '');
+    }
     try {
       let result;
       switch (request.type) {
@@ -291,7 +314,7 @@ class Backend {
     const parsed = parseCommand(source);
     if (!parsed) return (await this.evaluate(source)).value;
     if (parsed.command === 'help') {
-      return 'get <api-path> [query]\npost|put <api-path> [name=value|name:=json]\nset <name> <value>\nshow\nsave [path]\nload [path]\nhelp\nexit';
+      return 'get <api-path> [query]\npost|put <api-path> [name=value|name:=json]\nfind <api-path> -q <match-rule>\nset <name> <value>\necho <value>\nhistory\nrecord (auto|on|off|show)\nshow\nsave [path]\nload [path]\nhelp\nexit';
     }
 
     if (parsed.command === 'exit' || parsed.command === 'quit') return { exited: true };
@@ -308,6 +331,36 @@ class Backend {
       globalThis[name] = value;
       return { [parsed.name]: value };
     }
+    if (parsed.command === 'echo') {
+      return parsed.words.map((word) => {
+        const match = word.match(/^\$([A-Za-z_$][\w$]*)$/);
+        if (!match) return word;
+        const value = globalThis[match[1]];
+        return typeof value === 'string' ? value : JSON.stringify(value);
+      }).join(' ');
+    }
+    if (parsed.command === 'history') return this.history.slice(-1000);
+    if (parsed.command === 'record') {
+      if (parsed.action === 'show') {
+        if (parsed.options.length > 1 ||
+            (parsed.options.length === 1 && parsed.options[0] !== '--http')) {
+          throw new Error('Usage: record show [--http]');
+        }
+        return parsed.options[0] === '--http'
+          ? this.settings.recorder.http()
+          : this.settings.recorder.jsonl();
+      }
+      if (parsed.options.length || !['auto', 'on', 'off'].includes(parsed.action)) {
+        throw new Error('Usage: record (auto|on|off) or record show [--http]');
+      }
+      this.settings.recorder.setMode(parsed.action);
+      this.settings.recordMode = parsed.action;
+      return parsed.action;
+    }
+    if (parsed.command === 'find') {
+      return (await findResources(this.settings, parsed.apiPath, parsed.query, this.requestGet))
+        .map((match) => ({ path: match.path, resource: match.resource }));
+    }
     if (parsed.command === 'save') return this.saveState(parsed.filePath);
     if (parsed.command === 'load') return this.loadState(parsed.filePath);
     if (parsed.command === 'show') {
@@ -316,7 +369,8 @@ class Backend {
         edgercSection: this.settings.edgercSection,
         accountSwitchKey: this.settings.accountSwitchKey,
         contractId: this.settings.contractId,
-        groupId: this.settings.groupId
+        groupId: this.settings.groupId,
+        recordMode: this.settings.recordMode
       };
       if (parsed.name) return visible[parsed.name] ?? globalThis[parsed.name];
       return visible;
@@ -395,7 +449,8 @@ class Backend {
         replacement: pathToken
       }));
     }
-    const shellCommands = ['get', 'post', 'put', 'show', 'set', 'save', 'load', 'help', 'exit', 'quit'];
+    const shellCommands = ['get', 'post', 'put', 'find', 'show', 'set', 'echo', 'history',
+      'record', 'save', 'load', 'help', 'exit', 'quit'];
     if (/^[A-Za-z_$][\w$]*$/.test(source)) {
       return new Promise((resolve, reject) => {
         this.repl.complete(source, (error, result) => {
