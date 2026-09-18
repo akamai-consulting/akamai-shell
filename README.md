@@ -105,9 +105,9 @@ echo $val
 Make the file executable (`chmod +x script-file`) and run it directly. The
 shebang line, if present, is ignored. Script mode reuses the same command
 parser, JavaScript evaluator, variables, and pipelines as the interactive
-shell, and loads the saved `config` values and variables from
-`~/.config/akamai-shell/env` at startup, but never persists changes back to
-that file or to the interactive session's history. The process exits with a
+shell, and supports explicit executable JavaScript state files through
+`save [path]` and `load [path]`; it does not automatically persist session
+changes. The process exits with a
 non-zero status if a command fails or the script file cannot be read, and
 with status 0 on normal completion or an explicit `exit`/`quit`. This is a
 minimal, currently supported subset of script execution; see #65 for further
@@ -156,16 +156,15 @@ akamai-shell script.as foo bar
 In a script, `require()` resolves relative paths and `node_modules` against
 the script file's own directory. In the interactive shell, it resolves
 against the shell's current working directory. `process`/`require` are not
-persisted to the saved environment file, listed by `show` (with no
+persisted to state files, listed by `show` (with no
 arguments), or offered as variable-name completions.
 
-Common Node.js globals are also available inside the VM, including
+Common Node.js globals are also available in the native Node.js backend, including
 `Buffer`, `URL`, `URLSearchParams`, `AbortController`, `Blob`, `FormData`,
 `Headers`, `Request`, `Response`, `setTimeout`, `setInterval`,
 `setImmediate`, `queueMicrotask`, `structuredClone`, `performance`, and
 `fetch` when supported by the installed Node.js version. `global` aliases
-the VM's `globalThis`; it does not expose the host application's global
-object.
+the backend's `globalThis`.
 
 ## Quick command reference
 
@@ -183,6 +182,8 @@ object.
 | `record auto\|on\|off` | Control redacted in-memory request recording; `auto` keeps the latest request only. |
 | `record show [--http]` | Display captured JSONL or HTTP-style records. |
 | `history` | Display command history. |
+| `save [file]` | Save portable user variables and functions as executable JavaScript. |
+| `load [file]` | Load an executable JavaScript state file. |
 | `help` / `?` | Display command help. |
 | `exit` / `quit` | Leave the shell. |
 | `! <command>` | Run a local shell command. |
