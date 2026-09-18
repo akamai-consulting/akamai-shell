@@ -283,7 +283,8 @@ async function runInteractive(options = {}) {
           refreshSearch();
           return;
         }
-        if (character === '?' && (!key || (!key.ctrl && !key.meta)) && showContextHelp()) {
+        if ((character === '?' || key?.name === '?') &&
+            (!key || (!key.ctrl && !key.meta)) && showContextHelp()) {
           return;
         }
         ttyWrite(character, key);
