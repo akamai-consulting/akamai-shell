@@ -6,12 +6,22 @@ const { PassThrough } = require('node:stream');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { runScript, stripShebang } = require('../src/script-runner');
+const { runScript, stripShebang, isStatementComplete } = require('../src/script-runner');
 
 test('strips a leading shebang line before execution', () => {
   assert.equal(stripShebang('#!/usr/bin/env akamai-shell\nval = 1\n'), 'val = 1\n');
   assert.equal(stripShebang('val = 1\n'), 'val = 1\n');
   assert.equal(stripShebang('#!/usr/bin/env akamai-shell'), '');
+});
+
+test('detects whether a script statement is balanced/complete', () => {
+  assert.equal(isStatementComplete('val = 1'), true);
+  assert.equal(isStatementComplete('for (let i = 0; i < 3; i++) {'), false);
+  assert.equal(isStatementComplete('for (let i = 0; i < 3; i++) {\n  data[i] = i\n}'), true);
+  assert.equal(isStatementComplete('foo = "unterminated'), false);
+  assert.equal(isStatementComplete('foo = "//not a comment"'), true);
+  assert.equal(isStatementComplete('foo = 1 // } trailing comment {'), true);
+  assert.equal(isStatementComplete('foo = /* { */ 1'), true);
 });
 
 test('runs a shebang script assigning a variable and echoing it', async () => {
@@ -43,6 +53,51 @@ test('reports a non-zero exit status when a script command fails', async () => {
 
   assert.equal(exitCode, 1);
   assert.match(capturedError, /Error:/);
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('executes a multi-line for loop as a single statement', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-script-test-multiline-'));
+  const scriptFile = path.join(directory, 'script.sh');
+  fs.writeFileSync(scriptFile, [
+    '#!/usr/bin/env akamai-shell',
+    'data = []',
+    'for (let i = 0; i < 3; i++) {',
+    '  data[i] = i * i',
+    '}',
+    'show data'
+  ].join('\n'));
+  const output = new PassThrough();
+  const errorOutput = new PassThrough();
+  let captured = '';
+  output.on('data', (chunk) => { captured += chunk.toString(); });
+
+  const exitCode = await runScript(scriptFile, { output, errorOutput });
+
+  assert.equal(exitCode, 0);
+  assert.equal(captured, '[]\n[\n  0,\n  1,\n  4\n]\n');
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('reports an error for a script ending inside an unterminated statement', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-script-test-unterminated-'));
+  const scriptFile = path.join(directory, 'script.sh');
+  fs.writeFileSync(scriptFile, [
+    '#!/usr/bin/env akamai-shell',
+    'echo before',
+    'for (let i = 0; i < 3; i++) {',
+    '  echo $i'
+  ].join('\n'));
+  const output = new PassThrough();
+  const errorOutput = new PassThrough();
+  output.resume();
+  let capturedError = '';
+  errorOutput.on('data', (chunk) => { capturedError += chunk.toString(); });
+
+  const exitCode = await runScript(scriptFile, { output, errorOutput });
+
+  assert.equal(exitCode, 1);
+  assert.match(capturedError, /unterminated statement/);
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
