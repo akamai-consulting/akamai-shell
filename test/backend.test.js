@@ -29,6 +29,18 @@ test('handles initialize and evaluates in a persistent global context', async ()
   await backend.shutdown();
 });
 
+test('suppresses JavaScript expression results terminated by semicolons', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":66,"type":"evaluate","source":"foo = 123;"}\n');
+  await settle();
+  await backend.queue;
+  const result = messages.find((message) => message.id === 66 && message.type === 'result').result;
+  assert.deepEqual(result, {});
+  assert.equal(globalThis.foo, 123);
+  delete globalThis.foo;
+  await backend.shutdown();
+});
+
 test('loads an optional startup JavaScript file during initialization', async (t) => {
   const startupFile = path.join('/tmp', `akamai-shell-startup-${process.pid}.js`);
   fs.writeFileSync(startupFile, 'startupValue = 42\n');

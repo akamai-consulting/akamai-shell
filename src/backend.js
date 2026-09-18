@@ -499,7 +499,7 @@ class Backend {
 
       for (const text of capture.stdout) this.write({ type: 'stdout', data: text });
       for (const text of capture.stderr) this.write({ type: 'stderr', data: text });
-      return { value };
+      return { value: /;\s*$/.test(code) ? undefined : value };
     } finally {
       capture.restore();
     }
