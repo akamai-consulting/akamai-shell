@@ -113,6 +113,10 @@ with status 0 on normal completion or an explicit `exit`/`quit`. This is a
 minimal, currently supported subset of script execution; see #65 for further
 script-mode work such as positional arguments.
 
+If present, `~/.config/akamai-shell/startup.js` is evaluated when the backend
+starts. It can define default variables or adjust `config`; an explicit
+`load` command can then override those defaults from `state.js`.
+
 A JavaScript statement may span multiple lines; consecutive lines are joined
 until brackets, braces, parentheses, and quotes are balanced, so a `for`/`if`
 block or multi-line object/array literal executes as one statement:

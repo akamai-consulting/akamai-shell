@@ -14,6 +14,7 @@ const { createRecorder } = require('./recorder');
 
 const DEFAULT_TIMEOUT = 10000;
 const DEFAULT_STATE_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'state.js');
+const DEFAULT_STARTUP_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'startup.js');
 
 function asText(value) {
   if (typeof value === 'string') return value;
@@ -255,6 +256,7 @@ class Backend {
     }
     this.initialGlobals = new Set(Object.keys(globalThis));
     globalThis.config = this.settings;
+    this.initialized = false;
     this.closed = false;
     this.queue = Promise.resolve();
     this.buffer = '';
@@ -324,7 +326,7 @@ class Backend {
       let result;
       switch (request.type) {
         case 'initialize':
-          this.initialize(request);
+          await this.initialize(request);
           result = { ready: true };
           break;
         case 'evaluate':
@@ -599,7 +601,8 @@ class Backend {
     return variables;
   }
 
-  initialize(options = {}) {
+  async initialize(options = {}) {
+    if (this.initialized) return;
     this.mode = options.scriptPath ? 'script' : 'interactive';
     if (options.workingDirectory) process.chdir(path.resolve(options.workingDirectory));
     if (options.scriptPath) {
@@ -613,6 +616,24 @@ class Backend {
       globalThis.__dirname = __dirname;
       globalThis.require = require;
     }
+    const startupFile = options.startupFile || DEFAULT_STARTUP_FILE;
+    let startupSource;
+    try {
+      startupSource = fs.readFileSync(startupFile, 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        this.initialized = true;
+        return;
+      }
+      throw new Error(`Unable to read startup file ${startupFile}: ${error.message}`, { cause: error });
+    }
+    try {
+      await this.evaluate(startupSource);
+      this.syncSettings();
+    } catch (error) {
+      throw new Error(`Unable to evaluate startup file ${startupFile}: ${error.message}`, { cause: error });
+    }
+    this.initialized = true;
   }
 
   complete(code, cursor) {

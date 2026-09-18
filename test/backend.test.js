@@ -29,6 +29,19 @@ test('handles initialize and evaluates in a persistent global context', async ()
   await backend.shutdown();
 });
 
+test('loads an optional startup JavaScript file during initialization', async (t) => {
+  const startupFile = path.join('/tmp', `akamai-shell-startup-${process.pid}.js`);
+  fs.writeFileSync(startupFile, 'startupValue = 42\n');
+  t.after(() => fs.rmSync(startupFile, { force: true }));
+  const { input, messages, backend } = harness({ startupFile });
+  input.write(JSON.stringify({ id: 27, type: 'initialize', startupFile }) + '\n');
+  input.write('{"id":28,"type":"evaluate","source":"startupValue"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(messages.find((message) => message.id === 28 && message.type === 'result').result.value, 42);
+  await backend.shutdown();
+});
+
 test('uses config timeout default for evaluations', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":21,"type":"evaluate","source":"config.timeout.default = 2500"}\n');
