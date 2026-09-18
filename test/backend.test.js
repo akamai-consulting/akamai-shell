@@ -120,6 +120,16 @@ test('pipes show output through local shell commands', async () => {
   await backend.shutdown();
 });
 
+test('evaluates structured expressions passed to show', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":49,"type":"command","source":"show config[\\"target\\"]"}\n');
+  await settle();
+  await backend.queue;
+  const result = messages.find((message) => message.id === 49 && message.type === 'result');
+  assert.deepEqual(result.result, backend.settings.target);
+  await backend.shutdown();
+});
+
 test('pipes every command result, including help and shell escapes', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":47,"type":"command","source":"help | head -1"}\n');

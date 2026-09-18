@@ -203,7 +203,9 @@ function parseCommand(source) {
     }
     return { command, apiPath, query: tokens[1] };
   }
-  if (command === 'show') return { command, name: tokens.join(' ') };
+  if (command === 'show') {
+    return { command, name: source.trim().slice(command.length).trim() };
+  }
   if (command === 'set') {
     if (tokens.length < 2) throw new Error('Usage: set <name> <value>');
     return { command, name: tokens.shift(), value: tokens.join(' ') };
@@ -512,7 +514,11 @@ class Backend {
     if (parsed.command === 'save') return this.saveState(parsed.filePath);
     if (parsed.command === 'load') return this.loadState(parsed.filePath);
     if (parsed.command === 'show') {
-      if (parsed.name) return globalThis[parsed.name];
+      if (parsed.name) {
+        const result = await this.evaluate(parsed.name);
+        if (result.value === undefined) throw new Error(`Show expression "${parsed.name}" is undefined`);
+        return result.value;
+      }
       return this.userVariables();
     }
     const method = parsed.command.toUpperCase();
