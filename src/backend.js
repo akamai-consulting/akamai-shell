@@ -717,7 +717,9 @@ class Backend {
       const operatorMatch = partial.match(/^(.*?)(:|==|=)$/);
       const namePartial = operatorMatch ? operatorMatch[1] : partial;
       const names = [...new Set(parameters.map((parameter) => parameter.name))]
-        .filter((name) => name.startsWith(namePartial))
+        .filter((name) => operatorMatch
+          ? name === namePartial
+          : name.startsWith(namePartial))
         .sort((left, right) => left.localeCompare(right));
       return Promise.resolve({
         candidates: names.map((name) => {

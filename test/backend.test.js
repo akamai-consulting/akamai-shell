@@ -373,6 +373,8 @@ test('provides OpenAPI parameter context help without changing the input', async
       { name: 'contractId', in: 'query', description: 'The contract identifier. Used for filtering.' },
       { name: 'createFromVersion', in: 'body', schema: { type: 'integer' },
         description: 'The version.' },
+      { name: 'createFromVersionEtag', in: 'body', schema: { type: 'string' },
+        description: 'The version ETag.' },
       { name: 'contractId', description: 'Duplicate entry.' }
     ]
   };
@@ -394,6 +396,7 @@ test('provides OpenAPI parameter context help without changing the input', async
     [
       { name: 'contractId==', description: 'The contract identifier.' },
       { name: 'createFromVersion:=<integer>', description: 'The version.' },
+      { name: 'createFromVersionEtag=<string>', description: 'The version ETag.' },
       { name: 'groupId==', description: 'The group identifier.' }
     ]
   );
