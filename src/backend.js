@@ -11,7 +11,7 @@ const { sortCandidates } = require('./path-completion');
 const { findResources } = require('./find');
 const { createRecorder } = require('./recorder');
 
-const DEFAULT_TIMEOUT = 1000;
+const DEFAULT_TIMEOUT = 10000;
 const DEFAULT_STATE_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'state.js');
 
 function asText(value) {
