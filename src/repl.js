@@ -811,7 +811,7 @@ function runShellCommandCapture(command, input) {
 }
 
 function createRepl(output = process.stdout, input = process.stdin, requestGet, historyFile = HISTORY_FILE,
-  requireBasePath = process.cwd()) {
+  requireBasePath = process.cwd(), consoleOutput = output) {
   // A null historyFile requests an ephemeral session (used for script execution):
   // history and the parameter/variable environment are never written to disk.
   // The saved environment is still loaded at startup so that `.edgerc`,
@@ -942,7 +942,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     writable: false
   });
   const writeConsole = (...values) => {
-    output.write(`${values.map((value) => typeof value === 'string'
+    consoleOutput.write(`${values.map((value) => typeof value === 'string'
       ? value
       : serializeVariable(value)).join(' ')}\n`);
   };

@@ -142,6 +142,17 @@ show os.hostname()
 show process.argv
 ```
 
+Arguments after the script path are available through `process.argv`, using
+the usual Node.js layout: `process.argv[0]` is the Node executable,
+`process.argv[1]` is the script path, and `process.argv[2]` onward contain
+the arguments passed to the script:
+
+```bash
+akamai-shell script.as foo bar
+# process.argv[2] === "foo"
+# process.argv[3] === "bar"
+```
+
 In a script, `require()` resolves relative paths and `node_modules` against
 the script file's own directory. In the interactive shell, it resolves
 against the shell's current working directory. `process`/`require` are not

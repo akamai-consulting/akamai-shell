@@ -68,7 +68,11 @@ function isStatementComplete(source) {
   return depth <= 0 && !quote && !blockComment;
 }
 
-async function runScript(filePath, { output = process.stdout, errorOutput = process.stderr } = {}) {
+async function runScript(filePath, {
+  output = process.stdout,
+  errorOutput = process.stderr,
+  scriptArgs = []
+} = {}) {
   let content;
   try {
     content = fs.readFileSync(filePath, 'utf8');
@@ -77,6 +81,8 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
     return 1;
   }
   const lines = stripShebang(content).split('\n');
+  const originalArgv = process.argv;
+  process.argv = [process.argv[0], path.resolve(filePath), ...scriptArgs];
 
   // The REPL is created against throwaway streams so that its prompt and
   // internal writes do not appear in the script's actual output. A null
@@ -86,7 +92,14 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
   const replInput = new PassThrough();
   const replOutput = new PassThrough();
   replOutput.resume();
-  const repl = createRepl(replOutput, replInput, undefined, null, path.dirname(path.resolve(filePath)));
+  const repl = createRepl(
+    replOutput,
+    replInput,
+    undefined,
+    null,
+    path.dirname(path.resolve(filePath)),
+    output
+  );
 
   let exitCode = 0;
   let pendingStatement = '';
@@ -115,6 +128,7 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
     repl.rl.close();
     replInput.destroy();
     replOutput.destroy();
+    process.argv = originalArgv;
   }
   return exitCode;
 }

@@ -11,7 +11,7 @@ const args = process.argv.slice(2);
 const scriptFile = args[0] && !args[0].startsWith('-') ? args[0] : undefined;
 
 if (scriptFile) {
-  runScript(scriptFile).then((exitCode) => {
+  runScript(scriptFile, { scriptArgs: args.slice(1) }).then((exitCode) => {
     process.exitCode = exitCode;
   });
 } else {

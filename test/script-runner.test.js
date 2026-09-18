@@ -119,7 +119,37 @@ test('exposes process and a require scoped to the script\'s own directory', asyn
   const exitCode = await runScript(scriptFile, { output, errorOutput });
 
   assert.equal(exitCode, 0);
-  assert.equal(captured, `{}\n"hi from helper"\n${JSON.stringify(process.argv[1])}\n`);
+  assert.equal(captured,
+    `{}\n"hi from helper"\n${JSON.stringify(scriptFile)}\n`);
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('passes command-line arguments through process.argv', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-script-test-argv-'));
+  const scriptFile = path.join(directory, 'script.sh');
+  fs.writeFileSync(scriptFile, [
+    '#!/usr/bin/env akamai-shell',
+    'console.log(process.argv)',
+    'show require("process").argv[2]',
+    'show require("process").argv[3]'
+  ].join('\n'));
+  const output = new PassThrough();
+  const errorOutput = new PassThrough();
+  const originalArgv = process.argv;
+  let captured = '';
+  output.on('data', (chunk) => { captured += chunk.toString(); });
+
+  const exitCode = await runScript(scriptFile, {
+    output,
+    errorOutput,
+    scriptArgs: ['foo', 'bar']
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(captured, /foo/);
+  assert.match(captured, /bar/);
+  assert.match(captured, /"foo"\n"bar"\n/);
+  assert.deepEqual(process.argv, originalArgv);
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
