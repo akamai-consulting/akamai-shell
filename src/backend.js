@@ -692,12 +692,13 @@ class Backend {
           const suffix = candidate.startsWith(inputPath)
             ? `${pathToken}${candidate.slice(inputPath.length)}`
             : candidate;
-          return candidate === inputPath &&
-              typeof this.apiRegistry.hasCompletionDescendants === 'function' &&
-              !this.apiRegistry.hasCompletionDescendants(
-                method === 'find' ? 'GET' : method.toUpperCase(), inputPath)
-            ? `${suffix} `
-            : suffix;
+          if (candidate !== inputPath ||
+              typeof this.apiRegistry.hasCompletionDescendants !== 'function') {
+            return suffix;
+          }
+          const hasDescendants = this.apiRegistry.hasCompletionDescendants(
+            inputPath, method === 'find' ? 'GET' : method.toUpperCase());
+          return hasDescendants ? `${suffix}/` : `${suffix} `;
         }),
         replacement: pathToken
       }));

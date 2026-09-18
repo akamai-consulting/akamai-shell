@@ -143,13 +143,20 @@ function hasCompletionDescendants(apiPath, method = 'GET') {
     const actual = relative.split('/').filter(Boolean);
     const paths = apiModule.methodStaticPaths?.[method.toUpperCase()] ||
       apiModule.staticPaths || [];
-    return paths.some((template) => {
+    if (paths.some((template) => {
       const expected = template.split('/').filter(Boolean);
       return expected.length > actual.length && actual.every((part, index) => {
         const expectedPart = expected[index];
         return expectedPart.startsWith('{') && expectedPart.endsWith('}')
           ? true : expectedPart === part;
       });
+    })) return true;
+    return (apiModule.dynamicCollections || []).some((descriptor) => {
+      if (typeof descriptor.matches !== 'function' ||
+          !descriptor.matches(relative)) return false;
+      const prefix = typeof descriptor.prefix === 'function'
+        ? descriptor.prefix(relative) : descriptor.prefix;
+      return prefix === `${relative}/`;
     });
   });
 }

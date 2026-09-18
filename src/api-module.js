@@ -106,6 +106,7 @@ function createApiModule({
     staticPaths,
     methodPaths: normalizedMethodPaths,
     methodStaticPaths: normalizedMethodStaticPaths,
+    dynamicCollections,
 
     supports(apiPath) {
       return supportsPrefix(prefix, apiPath);
