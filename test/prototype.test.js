@@ -462,6 +462,12 @@ test('completes variable references throughout command lines', async () => {
   const [variableCandidates, variablePartial] = await repl.complete('get $p0/');
   assert.equal(variablePartial, '$p0/');
   assert(variableCandidates.includes('$p0/properties'));
+  await repl.execute('pp = "/papi/v1/properties/prp_526230"');
+  await repl.execute('ver = 79');
+  assert.deepEqual(await repl.complete('get $pp/versions/$ver/ru'), [
+    ['$pp/versions/$ver/rules'],
+    '$pp/versions/$ver/ru'
+  ]);
   assert.deepEqual(await repl.complete('echo $foo["act'), [
     ['$foo["activations"]'],
     '$foo["act'

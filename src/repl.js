@@ -1247,22 +1247,13 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     const [candidates] = await apiRegistry.completeMethod(
       match[1].toUpperCase(), inputPath, settings, cache, requestGet
     );
-    const variableMatch = pathToken.match(VARIABLE_PATTERN);
-    const variableIndex = variableMatch ? pathToken.indexOf(variableMatch[0]) : -1;
+    // Preserve every $variable reference (and any literal text) exactly as typed:
+    // since candidate is known to start with the fully expanded inputPath, the
+    // typed pathToken plus whatever text completion appended beyond inputPath is
+    // always a faithful reconstruction, regardless of how many variables it has.
     const mappedCandidates = candidates.map((candidate) => {
       if (!candidate.startsWith(inputPath)) return candidate;
-      const variablePath = variableMatch
-        ? expandCompletionPath(variableMatch[0], variables)
-        : null;
-      if (variablePath !== null &&
-          candidate.startsWith(variablePath) &&
-          (candidate === variablePath || candidate[variablePath.length] === '/')) {
-        return `${pathToken.slice(0, variableIndex)}${variableMatch[0]}${candidate.slice(variablePath.length)}`;
-      }
-      if (candidate === inputPath || inputPath.endsWith('/') || candidate[inputPath.length] === '/') {
-        return `${pathToken}${candidate.slice(inputPath.length)}`;
-      }
-      return candidate;
+      return `${pathToken}${candidate.slice(inputPath.length)}`;
     });
     return [mappedCandidates, pathToken];
   }
