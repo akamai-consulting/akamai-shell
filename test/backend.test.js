@@ -123,3 +123,21 @@ test('provides command substitution in native JavaScript evaluation', async () =
   assert.equal(messages.find((message) => message.id === 11 && message.type === 'result').result.value, 7);
   await backend.shutdown();
 });
+
+test('provides JavaScript and shell completion through the backend', async () => {
+  const registry = {
+    completeMethod: async () => [['/papi/v1/properties'], '/papi/v1/pr']
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write('{"id":12,"type":"complete","source":"get /papi/v1/pr"}\n');
+  input.write('{"id":13,"type":"complete","source":"set"}\n');
+  await settle();
+  await backend.queue;
+  assert.deepEqual(
+    messages.find((message) => message.id === 12 && message.type === 'result').result.candidates,
+    ['/papi/v1/properties']
+  );
+  assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
+    .result.candidates.includes('set'));
+  await backend.shutdown();
+});

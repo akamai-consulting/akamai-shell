@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { PassThrough } = require('node:stream');
 const apiRegistry = require('./api-registry');
+const { sortCandidates } = require('./path-completion');
 
 const DEFAULT_TIMEOUT = 1000;
 
@@ -110,6 +111,7 @@ class Backend {
     this.settings = loadSettings(options);
     this.requestGet = options.requestGet;
     this.apiRegistry = options.apiRegistry || apiRegistry;
+    this.completionCache = new Map();
     this.closed = false;
     this.queue = Promise.resolve();
     this.buffer = '';
@@ -315,16 +317,51 @@ class Backend {
   }
 
   complete(code, cursor) {
+    const source = String(code || '').slice(0, Number.isInteger(cursor) ? cursor : undefined);
+    const commandMatch = source.match(/^(get|post|put)\s+(\S*)$/);
+    if (commandMatch) {
+      const [, method, pathToken] = commandMatch;
+      const inputPath = pathToken || '/';
+      return this.apiRegistry.completeMethod(
+        method.toUpperCase(),
+        inputPath,
+        this.settings,
+        this.completionCache,
+        this.requestGet
+      ).then(([candidates]) => ({
+        candidates: candidates.map((candidate) =>
+          candidate.startsWith(inputPath)
+            ? `${pathToken}${candidate.slice(inputPath.length)}`
+            : candidate),
+        replacement: pathToken
+      }));
+    }
+    const shellCommands = ['get', 'post', 'put', 'show', 'set', 'help', 'exit', 'quit'];
+    if (/^[A-Za-z_$][\w$]*$/.test(source)) {
+      return new Promise((resolve, reject) => {
+        this.repl.complete(source, (error, result) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({
+            candidates: sortCandidates(new Set([
+              ...shellCommands.filter((command) => command.startsWith(source)),
+              ...result[0]
+            ])),
+            replacement: result[1]
+          });
+        });
+      });
+    }
     return new Promise((resolve, reject) => {
-      const position = Number.isInteger(cursor) ? cursor : code.length;
       const callback = (error, result) => {
         if (error) reject(error);
         else resolve({ candidates: result[0], replacement: result[1] });
       };
       // Node's public REPL completer currently accepts (line, callback);
       // retain cursor handling for custom REPL implementations.
-      if (this.repl.completer.length >= 3) this.repl.completer(code, position, callback);
-      else this.repl.completer(code.slice(0, position), callback);
+      this.repl.completer(source, callback);
     });
   }
 
