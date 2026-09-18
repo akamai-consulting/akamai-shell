@@ -238,6 +238,11 @@ function parameterOperator(method, parameter) {
   return parameter.schema?.type && parameter.schema.type !== 'string' ? ':=' : '=';
 }
 
+function parameterType(parameter) {
+  const type = parameter.schema?.type || parameter.type;
+  return type ? `<${type}>` : '';
+}
+
 class Backend {
   constructor(options = {}) {
     this.input = options.input || process.stdin;
@@ -709,8 +714,10 @@ class Backend {
       const apiPath = this.expandCompletionPath(pathToken);
       const parameters = this.apiRegistry.parameterHelp(
         method === 'find' ? 'GET' : method.toUpperCase(), apiPath);
+      const operatorMatch = partial.match(/^(.*?)(:|==|=)$/);
+      const namePartial = operatorMatch ? operatorMatch[1] : partial;
       const names = [...new Set(parameters.map((parameter) => parameter.name))]
-        .filter((name) => name.startsWith(partial))
+        .filter((name) => name.startsWith(namePartial))
         .sort((left, right) => left.localeCompare(right));
       return Promise.resolve({
         candidates: names.map((name) => {
@@ -779,7 +786,10 @@ class Backend {
         .trim()
         .split(/(?<=[.!?])\s+/)[0];
       const operator = parameterOperator(method, parameter);
-      result.push({ name: `${parameter.name}${operator}`, description });
+      result.push({
+        name: `${parameter.name}${operator}${parameterType(parameter)}`,
+        description
+      });
       return result;
     }, []);
     return entries.sort((left, right) => left.name.localeCompare(right.name));
