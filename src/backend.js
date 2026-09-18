@@ -53,35 +53,15 @@ function loadSettings(options) {
 }
 
 function bindConfig(settings) {
-  const targetFields = new Set(['accountSwitchKey', 'contractId', 'groupId']);
-  let targetProxy;
-  const makeTargetProxy = (target) => new Proxy(target, {
-    set(targetObject, name, value) {
-      Reflect.set(targetObject, name, value);
-      if (targetFields.has(name)) settings[name] = value;
-      return true;
-    }
-  });
-  targetProxy = makeTargetProxy(settings.target || {});
-  settings.target = targetProxy;
   return new Proxy(settings, {
-    get(targetObject, name) {
-      return Reflect.get(targetObject, name);
-    },
     set(targetObject, name, value) {
       if (name === 'target') {
         if (!value || typeof value !== 'object' || Array.isArray(value)) {
           throw new Error('config.target must be an object');
         }
-        targetProxy = makeTargetProxy(value);
-        for (const field of targetFields) {
-          if (value[field] !== undefined) targetObject[field] = value[field];
-        }
-        return Reflect.set(targetObject, name, targetProxy);
+        return Reflect.set(targetObject, name, value);
       }
-      Reflect.set(targetObject, name, value);
-      if (targetFields.has(name)) targetProxy[name] = value;
-      return true;
+      return Reflect.set(targetObject, name, value);
     }
   });
 }

@@ -83,7 +83,7 @@ test('dispatches get commands through the API registry', async () => {
   await backend.shutdown();
 });
 
-test('exposes config with synchronized target values', async () => {
+test('exposes config target values to API dispatch', async () => {
   const calls = [];
   const registry = {
     get: async (settings) => {
@@ -99,7 +99,8 @@ test('exposes config with synchronized target values', async () => {
   await backend.queue;
   assert.equal(messages.find((message) => message.id === 41 && message.type === 'result').result.value, 'ctr_target');
   assert.equal(calls[0].target.contractId, 'ctr_replaced');
-  assert.equal(calls[0].groupId, 'grp_target');
+  assert.equal(calls[0].target.groupId, 'grp_target');
+  assert.equal(calls[0].contractId, '');
   await backend.shutdown();
 });
 
