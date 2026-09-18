@@ -197,12 +197,15 @@ Body fields use HTTPie-style syntax:
 
 ```text
 post /edge-diagnostics/v1/curl url=https://example.test timeout:=30 enabled:=true
+put -v "$payload" /some/path name=updated
 ```
 
 `name=value` merges a string field into a POST or PUT JSON body. `name:=value`
 parses the value as JSON, so numbers, booleans, arrays, objects, and `null`
 remain typed. Query parameters use `name==value` for all methods, either in
 the path or as separate arguments. GET arguments must use the `==` form.
+With `-v`, the referenced JSON object is used as the initial body and
+parameter arguments merge over it.
 
 API paths include their service prefix, for example:
 

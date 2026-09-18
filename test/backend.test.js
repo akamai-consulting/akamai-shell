@@ -153,6 +153,8 @@ test('writes GET output and merges JSON files into write bodies', async () => {
     type: 'command',
     source: `put -f ${bodyFile} /example name=from-argument count:=2`
   }) + '\n');
+  input.write('{"id":62,"type":"evaluate","source":"payload = { nested: [1, 2], enabled: true }"}\n');
+  input.write('{"id":63,"type":"command","source":"put -v \\"$payload\\" /example extra=value"}\n');
   await settle();
   await backend.queue;
   assert.equal(messages.find((message) => message.id === 60 && message.type === 'result').result, undefined);
@@ -162,6 +164,12 @@ test('writes GET output and merges JSON files into write bodies', async () => {
     apiPath: '/example',
     query: {},
     body: { name: 'from-argument', count: 2 }
+  });
+  assert.deepEqual(calls[1], {
+    method: 'PUT',
+    apiPath: '/example',
+    query: {},
+    body: { nested: [1, 2], enabled: true, extra: 'value' }
   });
   fs.unlinkSync(outputFile);
   fs.unlinkSync(bodyFile);
@@ -213,7 +221,7 @@ test('pipes every command result, including help and shell escapes', async () =>
   input.write('{"id":49,"type":"command","source":"!printf hello"}\n');
   await settle();
   await backend.queue;
-  assert.equal(messages.find((message) => message.id === 47 && message.type === 'result').result, 'get <api-path> [query]\n');
+  assert.equal(messages.find((message) => message.id === 47 && message.type === 'result').result, 'get [-f <file>] <api-path> [query]\n');
   assert.equal(messages.find((message) => message.id === 48 && message.type === 'result').result, 'hello');
   assert.equal(messages.find((message) => message.id === 49 && message.type === 'result').result, 'hello');
   await backend.shutdown();

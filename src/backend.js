@@ -172,7 +172,7 @@ function words(source) {
   return result;
 }
 
-function parseCommand(source) {
+function parseCommand(source, valueOverride) {
   const rawSource = String(source);
   if (rawSource.startsWith('!')) {
     const shellSource = rawSource.slice(1).trimStart();
@@ -218,16 +218,33 @@ function parseCommand(source) {
     return { command, name: tokens.shift(), value: tokens.join(' ') };
   }
   let filePath;
-  if (tokens[0] === '-f') {
-    if (!tokens[1]) throw new Error(`Usage: ${command} -f <file> <api-path>`);
-    filePath = tokens[1];
-    tokens.splice(0, 2);
+  let value;
+  while (tokens[0] === '-f' || tokens[0] === '-v') {
+    const option = tokens.shift();
+    if (!tokens[0]) throw new Error(`Usage: ${command} ${option} <value> <api-path>`);
+    if (option === '-f') filePath = tokens.shift();
+    else if (valueOverride !== undefined) {
+      if (command === 'get') throw new Error('-v is only supported for POST and PUT');
+      tokens.shift();
+      value = valueOverride;
+    }
+    else {
+      if (command === 'get') throw new Error('-v is only supported for POST and PUT');
+      const rawValue = tokens.shift();
+      try { value = JSON.parse(rawValue); } catch (error) {
+        throw new Error(`Invalid JSON value for -v: ${error.message}`);
+      }
+    }
   }
   if (!tokens.length || !tokens[0].startsWith('/')) throw new Error(`Usage: ${command} <api-path>`);
   const rawPath = tokens.shift();
   const [apiPath, queryString] = rawPath.split('?', 2);
   const query = Object.fromEntries(new URLSearchParams(queryString || ''));
-  const body = {};
+  const body = value === undefined ? {} : value;
+  if (value !== undefined &&
+      (!body || typeof body !== 'object' || Array.isArray(body))) {
+    throw new Error('-v requires a JSON object value');
+  }
   for (const token of tokens) {
     const match = token.match(/^([^:=]+)(==|:=|=)(.*)$/);
     if (!match) throw new Error(`Invalid ${command} argument "${token}"`);
@@ -474,11 +491,16 @@ class Backend {
       });
     }
     const expandedSource = this.expandCommandVariables(source);
-    const parsed = parseCommand(expandedSource);
+    const valueMatch = source.match(/^(post|put)\s+-v\s+("|')?\$([A-Za-z_$][\w$]*)\2?(?:\s|$)/);
+    let valueOverride;
+    if (valueMatch) {
+      valueOverride = globalThis[valueMatch[3]];
+    }
+    const parsed = parseCommand(expandedSource, valueOverride);
     if (!parsed) return (await this.evaluate(source)).value;
     this.syncSettings();
     if (parsed.command === '?' || parsed.command === 'help') {
-      return 'get <api-path> [query]\npost|put <api-path> [name=value|name:=json]\nfind <api-path> -q <match-rule>\nset <name> <value>\necho <value>\nhistory\nrecord (auto|on|off|show)\nshow\nsave [path]\nload [path]\nhelp\nexit';
+      return 'get [-f <file>] <api-path> [query]\npost|put [-f <file>] [-v <json>] <api-path> [name=value|name:=json]\nfind <api-path> -q <match-rule>\nset <name> <value>\necho <value>\nhistory\nrecord (auto|on|off|show)\nshow\nsave [path]\nload [path]\nhelp\nexit';
     }
 
     if (parsed.command === 'exit' || parsed.command === 'quit') return { exited: true };
