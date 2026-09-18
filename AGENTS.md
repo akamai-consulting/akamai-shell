@@ -39,7 +39,7 @@ form:
 
 ```text
 akamai> set edgerc ~/.edgerc
-akamai> set edgerc-section papi
+akamai> set edgercSection papi
 akamai> get /papi/v1/properties
 akamai> get /papi/v1/edgehostnames/<TAB>
 ```
@@ -56,7 +56,10 @@ The initial command grammar should include:
   for JSON values; `name==value` is a query parameter. With `-f`, the JSON
   body is read from the file and inline fields override it. With `-v`, a
   JavaScript JSON object supplies the initial body.
-- `set <name> <value>` for global settings.
+- `set <name> <value>` for scalar global settings and
+  `set <object>.<property> <value>` for structured settings such as
+  `set target.accountSwitchKey foo`. The existing top-level target fields
+  remain supported as shorthand.
 - `show` or an equivalent command for displaying non-sensitive settings.
 - `help` and `exit`/`quit`.
 
@@ -220,7 +223,7 @@ Implement the project in the following phases:
    - Define a session configuration object with safe defaults and validation.
 
 2. **Implement configuration commands**
-   - Implement `set edgerc <path>` and `set edgerc-section <section>`.
+   - Implement `set edgerc <path>` and `set edgercSection <section>`.
    - Expand `~` only for local file paths, and keep the configured path
      displayable without reading or printing secret contents.
    - Implement `show` for non-sensitive configuration values.

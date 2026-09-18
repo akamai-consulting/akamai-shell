@@ -274,7 +274,7 @@ test('exposes config target values to API dispatch', async () => {
 
 test('set and show expose the current session state', async () => {
   const { input, messages, backend } = harness();
-  input.write('{"id":5,"type":"command","source":"set edgerc-section staging"}\n');
+  input.write('{"id":5,"type":"command","source":"set edgercSection staging"}\n');
   input.write('{"id":51,"type":"evaluate","source":"visibleValue = 42"}\n');
   input.write('{"id":6,"type":"command","source":"show"}\n');
   await settle();
@@ -286,6 +286,68 @@ test('set and show expose the current session state', async () => {
   const state = messages.find((message) => message.id === 6 && message.type === 'result').result;
   assert.equal(state.config.edgercSection, 'staging');
   assert.equal(state.visibleValue, 42);
+  await backend.shutdown();
+});
+
+test('rejects scalar target settings and the removed edgerc-section alias', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":52,"type":"command","source":"set target foo"}\n');
+  input.write('{"id":53,"type":"command","source":"set edgerc-section staging"}\n');
+  await settle();
+  await backend.queue;
+  assert.match(
+    messages.find((message) => message.id === 52 && message.type === 'error').error.message,
+    /target is structured/
+  );
+  assert.match(
+    messages.find((message) => message.id === 53 && message.type === 'error').error.message,
+    /Invalid setting name "edgerc-section"/
+  );
+  await backend.shutdown();
+});
+
+test('sets nested configuration values through dotted paths', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":54,"type":"command","source":"set target.accountSwitchKey foo"}\n');
+  input.write('{"id":55,"type":"complete","source":"set target."}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(messages.find((message) => message.id === 54 && message.type === 'error'), undefined);
+  assert.equal(
+    messages.find((message) => message.id === 54 && message.type === 'done').id,
+    54
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 55 && message.type === 'result').result.candidates,
+    ['set target.accountSwitchKey', 'set target.contractId', 'set target.groupId']
+  );
+  await backend.shutdown();
+});
+
+test('initializes hidden setting metadata for plain config objects', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":60,"type":"evaluate","source":"config = { edgerc: \\"/tmp/.edgerc\\", edgercSection: \\"default\\", target: {} }"}\n');
+  input.write('{"id":61,"type":"command","source":"set edgercSection papi"}\n');
+  input.write('{"id":62,"type":"command","source":"show config"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(messages.find((message) => message.id === 61 && message.type === 'error'), undefined);
+  const config = messages.find((message) => message.id === 62 && message.type === 'result').result;
+  assert.equal(config.edgercSection, 'papi');
+  assert.equal(Object.hasOwn(config, 'parameterDefaults'), false);
+  await backend.shutdown();
+});
+
+test('updates target shorthand without creating a top-level duplicate', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":63,"type":"evaluate","source":"config = { target: { groupId: \\"old\\" } }"}\n');
+  input.write('{"id":64,"type":"command","source":"set groupId xxx"}\n');
+  input.write('{"id":65,"type":"command","source":"show config"}\n');
+  await settle();
+  await backend.queue;
+  const config = messages.find((message) => message.id === 65 && message.type === 'result').result;
+  assert.equal(config.target.groupId, 'xxx');
+  assert.equal(Object.hasOwn(config, 'groupId'), false);
   await backend.shutdown();
 });
 
@@ -367,8 +429,13 @@ test('provides JavaScript and shell completion through the backend', async () =>
   input.write('{"id":28,"type":"complete","source":"get /papi/v1/properties"}\n');
   input.write('{"id":29,"type":"complete","source":"get /papi/v1/properties "}\n');
   input.write('{"id":30,"type":"complete","source":"get /papi/v1/properties contractId==value "}\n');
+  input.write('{"id":31,"type":"complete","source":" get /"}\n');
   input.write('{"id":13,"type":"complete","source":"sho"}\n');
   input.write('{"id":27,"type":"complete","source":"set edg"}\n');
+  input.write('{"id":56,"type":"complete","source":"set tar"}\n');
+  input.write('{"id":57,"type":"complete","source":"set target"}\n');
+  input.write('{"id":58,"type":"complete","source":"set target.accountSwitchKey"}\n');
+  input.write('{"id":59,"type":"complete","source":"set edgercSection"}\n');
   input.write('{"id":14,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
   input.write('{"id":15,"type":"complete","source":"get $pp/"}\n');
   input.write('{"id":18,"type":"evaluate","source":"config = { edgercSection: \\"papi\\", target: { groupId: \\"grp\\", contractId: \\"ctr\\" } }"}\n');
@@ -398,11 +465,31 @@ test('provides JavaScript and shell completion through the backend', async () =>
     messages.find((message) => message.id === 30 && message.type === 'result').result,
     { candidates: ['contractId==', 'groupId=='], replacement: '' }
   );
+  assert.deepEqual(
+    messages.find((message) => message.id === 31 && message.type === 'result').result.candidates,
+    ['/papi/v1/properties']
+  );
   assert.ok(messages.find((message) => message.id === 13 && message.type === 'result')
   .result.candidates.includes('show'));
   assert.deepEqual(
   messages.find((message) => message.id === 27 && message.type === 'result').result.candidates,
-  ['set edgerc', 'set edgerc-section', 'set edgercSection']
+  ['set edgerc', 'set edgercSection']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 56 && message.type === 'result').result.candidates,
+    ['set target']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 57 && message.type === 'result').result.candidates,
+    ['set target.']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 58 && message.type === 'result').result.candidates,
+    ['set target.accountSwitchKey ']
+  );
+  assert.deepEqual(
+    messages.find((message) => message.id === 59 && message.type === 'result').result.candidates,
+    ['set edgercSection ']
   );
   assert.deepEqual(
     messages.find((message) => message.id === 15 && message.type === 'result').result.candidates,
@@ -440,6 +527,21 @@ test('provides JavaScript and shell completion through the backend', async () =>
     messages.find((message) => message.id === 26 && message.type === 'result').result.candidates,
     ['show config["target"].groupId', 'show config["target"].contractId']
   );
+  await backend.shutdown();
+});
+
+test('completes shell files after escapes and pipelines', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":70,"type":"complete","source":"! cat src/back"}\n');
+  input.write('{"id":71,"type":"complete","source":"get / | cat src/back"}\n');
+  await settle();
+  await backend.queue;
+  for (const id of [70, 71]) {
+    assert.deepEqual(
+      messages.find((message) => message.id === id && message.type === 'result').result,
+      { candidates: ['src/backend.js'], replacement: 'src/back' }
+    );
+  }
   await backend.shutdown();
 });
 

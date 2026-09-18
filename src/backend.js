@@ -37,6 +37,7 @@ Data and shell:
 Session:
   config.<name> = <value>              Change a session setting
   set <name> <value>                   Change a known session setting
+  set target.<name> <value>             Change a structured session setting
   record auto|on|off                   Control HTTP recording
   record show [--http]                Display captured records
   history                              Show command history
@@ -181,6 +182,91 @@ function splitPipeline(source) {
     }
   }
   return null;
+}
+
+function lastPipelineSegment(source) {
+  let segmentStart = 0;
+  let quote = '';
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+    } else if (character === '|') {
+      segmentStart = index + 1;
+    }
+  }
+  return source.slice(segmentStart).trimStart();
+}
+
+function shellCompletion(source) {
+  const segment = lastPipelineSegment(source);
+  const isShellEscape = segment.startsWith('!');
+  const hasPipeline = segment !== source.trimStart();
+  if (!isShellEscape && !hasPipeline) return null;
+  const commandSource = isShellEscape ? segment.slice(1).trimStart() : segment;
+  const tokenMatch = commandSource.match(/(?:^|\s)(\S*)$/);
+  if (!tokenMatch) return null;
+  const token = tokenMatch[1];
+  const beforeToken = commandSource.slice(0, commandSource.length - token.length).trim();
+  const commandPosition = !beforeToken;
+  if (commandPosition && !token.includes('/') && !token.startsWith('.')) {
+    const candidates = new Set();
+    for (const directory of (process.env.PATH || '').split(path.delimiter)) {
+      if (!directory) continue;
+      try {
+        for (const entry of fs.readdirSync(directory)) {
+          if (!entry.startsWith(token)) continue;
+          try {
+            if (fs.accessSync(path.join(directory, entry), fs.constants.X_OK) === undefined) {
+              candidates.add(entry);
+            }
+          } catch {
+            // Ignore inaccessible or non-executable PATH entries.
+          }
+        }
+      } catch {
+        // Ignore unavailable PATH directories.
+      }
+    }
+    return { candidates: [...candidates].sort(), replacement: token };
+  }
+
+  const expandedToken = token.startsWith('~')
+    ? path.join(os.homedir(), token.slice(1))
+    : token;
+  const directoryToken = expandedToken.endsWith(path.sep)
+    ? expandedToken
+    : path.dirname(expandedToken);
+  const namePartial = expandedToken.endsWith(path.sep)
+    ? ''
+    : path.basename(expandedToken);
+  const directory = path.resolve(directoryToken || '.');
+  let entries;
+  try {
+    entries = fs.readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return { candidates: [], replacement: token };
+  }
+  const prefix = token.slice(0, token.length - namePartial.length);
+  const candidates = entries
+    .filter((entry) => entry.name.startsWith(namePartial) &&
+      (namePartial.startsWith('.') || !entry.name.startsWith('.')))
+    .map((entry) => `${prefix}${entry.name}${entry.isDirectory() ? path.sep : ''}`)
+    .sort();
+  return { candidates, replacement: token };
 }
 
 function words(source) {
@@ -552,15 +638,46 @@ class Backend {
       });
     }
     if (parsed.command === 'set') {
-      const name = parsed.name === 'edgerc-section' ? 'edgercSection' : parsed.name;
-      const value = name === 'edgerc' && parsed.value.startsWith('~')
-        ? path.join(os.homedir(), parsed.value.slice(2)) : parsed.value;
-      if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error(`Invalid setting name "${parsed.name}"`);
-      this.settings[name] = value;
-      this.settings.parameterDefaults[name] = value;
-      if (['accountSwitchKey', 'contractId', 'groupId'].includes(name)) {
-        this.settings.target[name] = value;
+      const pathParts = parsed.name.split('.');
+      if (!pathParts.every((part) => /^[A-Za-z_$][\w$]*$/.test(part))) {
+        throw new Error(`Invalid setting name "${parsed.name}"`);
       }
+      const knownSettings = new Set([
+        'accountSwitchKey', 'contractId', 'edgerc', 'edgercSection', 'groupId',
+        'logLevel', 'logOutput', 'recordMode', 'target', 'timeout'
+      ]);
+      const [root, ...nestedParts] = pathParts;
+      if (!knownSettings.has(root)) throw new Error(`Unknown setting "${root}"`);
+      if (!nestedParts.length && root === 'target') {
+        throw new Error('target is structured; use set target.<name> <value>');
+      }
+      const value = root === 'edgerc' && parsed.value.startsWith('~')
+        ? path.join(os.homedir(), parsed.value.slice(2)) : parsed.value;
+      if (nestedParts.length) {
+        let target = this.settings[root];
+        for (const part of nestedParts.slice(0, -1)) {
+          if (!target || typeof target !== 'object' || Array.isArray(target)) {
+            throw new Error(`Setting "${nestedParts.slice(0, -1).join('.')}" is not an object`);
+          }
+          target = target[part];
+        }
+        if (!target || typeof target !== 'object' || Array.isArray(target)) {
+          throw new Error(`Setting "${root}" is not an object`);
+        }
+        target[nestedParts.at(-1)] = value;
+        return undefined;
+      }
+      if (['accountSwitchKey', 'contractId', 'groupId'].includes(root)) {
+        if (!this.settings.target || typeof this.settings.target !== 'object' ||
+            Array.isArray(this.settings.target)) {
+          throw new Error('Setting "target" is not an object');
+        }
+        this.settings.target[root] = value;
+        this.settings.parameterDefaults.target = this.settings.target;
+        return undefined;
+      }
+      this.settings[root] = value;
+      this.settings.parameterDefaults[root] = value;
       return undefined;
     }
     if (parsed.command === 'echo') {
@@ -684,6 +801,14 @@ class Backend {
       throw new Error('config must be an object');
     }
     this.settings = globalThis.config;
+    if (!this.settings.parameterDefaults) {
+      Object.defineProperty(this.settings, 'parameterDefaults', {
+        value: {},
+        enumerable: false,
+        configurable: true,
+        writable: true
+      });
+    }
     if (!this.settings.recorder) {
       Object.defineProperty(this.settings, 'recorder', {
         value: createRecorder(),
@@ -748,7 +873,11 @@ class Backend {
 
   complete(code, cursor) {
     this.syncSettings();
-    const source = String(code || '').slice(0, Number.isInteger(cursor) ? cursor : undefined);
+    const source = String(code || '')
+      .slice(0, Number.isInteger(cursor) ? cursor : undefined)
+      .trimStart();
+    const shellResult = shellCompletion(source);
+    if (shellResult) return Promise.resolve(shellResult);
     const showMatch = source.match(/^show\s+(.+)$/);
     if (showMatch) {
       const [, expression] = showMatch;
@@ -832,13 +961,41 @@ class Backend {
 
     const setMatch = source.match(/^set\s+(\S*)$/);
     if (setMatch) {
-      const knownSettings = ['accountSwitchKey', 'contractId', 'edgerc', 'edgerc-section',
-        'edgercSection', 'groupId', 'logLevel', 'logOutput', 'recordMode', 'target', 'timeout'];
+      const knownSettings = ['accountSwitchKey', 'contractId', 'edgerc', 'edgercSection',
+        'groupId', 'logLevel', 'logOutput', 'recordMode', 'target', 'timeout'];
       const partial = setMatch[1];
+      if (partial.includes('.')) {
+        const parts = partial.split('.');
+        const root = parts.shift();
+        let target = this.settings[root];
+        for (const part of parts.slice(0, -1)) target = target?.[part];
+        const namePartial = parts.at(-1) || '';
+        if (target && typeof target === 'object' && !Array.isArray(target)) {
+          return Promise.resolve({
+            candidates: Object.keys(target)
+              .filter((name) => name.startsWith(namePartial))
+              .map((name) => {
+                const candidateParts = [...parts.slice(0, -1), name];
+                const value = target[name];
+                const suffix = name === namePartial
+                  ? value && typeof value === 'object' && !Array.isArray(value) ? '.' : ' '
+                  : '';
+                return `set ${root}.${candidateParts.join('.')}${suffix}`;
+              }),
+            replacement: `set ${partial}`
+          });
+        }
+      }
       return Promise.resolve({
         candidates: knownSettings
           .filter((name) => name.startsWith(partial))
-          .map((name) => `set ${name}`),
+          .map((name) => {
+            const value = this.settings[name];
+            const suffix = name === partial
+              ? value && typeof value === 'object' && !Array.isArray(value) ? '.' : ' '
+              : '';
+            return `set ${name}${suffix}`;
+          }),
         replacement: `set ${partial}`
       });
     }
@@ -906,7 +1063,7 @@ class Backend {
 
   completeVariableExpression(source) {
     const properties = (value) => Object.getOwnPropertyNames(value)
-      .filter((key) => key !== 'recorder');
+      .filter((key) => !['parameterDefaults', 'recorder'].includes(key));
     const bracketMatch = source.match(/^(.*)\[(?:(["'])([^"']*)?)?$/);
     if (bracketMatch) {
       const [, base, quote, partial = ''] = bracketMatch;

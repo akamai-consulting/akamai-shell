@@ -25,7 +25,7 @@ function normalizePath(apiPath) {
 
 function createClient(settings) {
   if (!settings.edgerc || !settings.edgercSection) {
-    throw new Error('Set edgerc and edgerc-section before making a request');
+    throw new Error('Set edgerc and edgercSection before making a request');
   }
   return new EdgeGrid({ path: settings.edgerc, section: settings.edgercSection });
 }

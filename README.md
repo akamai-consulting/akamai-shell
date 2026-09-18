@@ -86,6 +86,18 @@ Configuration and JSON-serializable session variables are persisted under
 `~/.config/akamai-shell/`. Credential values and secret request headers are
 never displayed or persisted by the shell.
 
+Structured settings can be changed with dotted `set` paths. For example:
+
+```text
+set target.accountSwitchKey foo
+set target.contractId bar
+set target.groupId baz
+```
+
+The equivalent JavaScript form is `config.target = { ... }`. The existing
+top-level `set accountSwitchKey`, `set contractId`, and `set groupId` commands
+remain as shorthand.
+
 ## Running scripts
 
 `akamai-shell` can execute a file of shell commands non-interactively:
