@@ -1,11 +1,9 @@
 # Akamai Shell
 
 `akamai-shell` is an interactive JavaScript-enabled console for calling
-Akamai APIs directly. It solves the gap between one-off `curl`/HTTPie
-commands and a full API client: requests use EdgeGrid authentication, API
-paths and methods are validated from the checked-in OpenAPI documents, and
-responses can be inspected, transformed, stored in variables, and reused in
-later requests.
+Akamai APIs directly. Requests use EdgeGrid authentication, API paths and
+methods are checked against the checked-in OpenAPI documents, and responses
+can be inspected, transformed, stored in variables, and reused.
 
 ![Akamai Shell terminal demo](doc/asset/demo-ttyrec.gif)
 
@@ -18,208 +16,272 @@ It is useful when you need to:
 - Use the same generic request path for normal commands and tab completion.
 - Record redacted HTTP exchanges while developing or troubleshooting scripts.
 
-The shell currently includes modules for Property Manager, Cloudlets v2/v3,
-Edge Diagnostics, Edge DNS/Config DNS, and DataStream Config. Supported
-methods and paths vary by module; unsupported combinations fail explicitly.
+Supported methods and paths vary by API module; unsupported combinations fail
+explicitly.
 
-## Installation and startup
+## Get started
 
-Requirements: Node.js and an EdgeGrid resource file, normally
-`~/.edgerc`.
+Requirements:
 
-Clone the repository with its checked-in API reference submodule:
+- Node.js
+- An EdgeGrid resource file, normally `~/.edgerc`
+
+Clone the repository with its API reference submodule and install dependencies:
 
 ```bash
 git clone --recurse-submodules https://github.com/tai/akamai-shell.git
 cd akamai-shell
+npm install
+npm start
 ```
 
-For an existing checkout, initialize or update the submodules with:
+For an existing checkout:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-```bash
-npm install
-npm start
-```
-
-To install the shell as a global CLI from a local checkout:
+The executable can also be installed from the checkout:
 
 ```bash
 npm install -g .
-```
-
-For a development checkout, use a link instead:
-
-```bash
-npm link
-```
-
-Both commands install the `akamai-shell` executable, which can then be run
-from any directory:
-
-```bash
 akamai-shell
 ```
 
-Configure the credential file and section from inside the shell:
+Set the credential file and selected EdgeGrid section:
 
 ```text
-akamai> config.edgerc = "~/.edgerc"
-akamai> config.edgercSection = "papi"
+akamai> set edgerc ~/.edgerc
+akamai> set edgercSection papi
 ```
 
-Set the active API request target as one value. Use the identifiers from your
-own account:
-
-```javascript
-config.target = {
-  accountSwitchKey: "your-account-switch-key",
-  contractId: "your-contract-id",
-  groupId: "your-group-id"
-}
-```
-
-Configuration and JSON-serializable session variables are persisted under
-`~/.config/akamai-shell/`. Credential values and secret request headers are
-never displayed or persisted by the shell.
-
-Structured settings can be changed with dotted `set` paths. For example:
+Set request context either with structured dotted settings or the shorthand
+fields:
 
 ```text
-set target.accountSwitchKey foo
-set target.contractId bar
-set target.groupId baz
+akamai> set target.accountSwitchKey B-C-1ED34DK
+akamai> set target.contractId ctr_example
+akamai> set target.groupId grp_example
 ```
 
-The equivalent JavaScript form is `config.target = { ... }`. The existing
-top-level `set accountSwitchKey`, `set contractId`, and `set groupId` commands
-remain as shorthand.
+The `config` value is an ordinary JavaScript dictionary. Use `show config` to
+inspect the current non-sensitive settings. Credentials, authorization
+headers, and other secret-bearing values are not displayed or persisted.
+
+Make a first request:
+
+```text
+akamai> get /papi/v1/properties
+```
+
+Press Tab while entering a command for completion. Type `?` in an API command
+for contextual parameter help.
 
 ## Running scripts
 
-`akamai-shell` can execute a file of shell commands non-interactively:
+Run a script file through the shell:
 
 ```bash
 akamai-shell script-file
 ```
 
-This also works as an executable script with a shebang line:
+An executable script may use the shell's shebang:
 
 ```bash
 #!/usr/bin/env akamai-shell
-val = 123
-echo $val
+value = 123
+echo $value
 ```
 
-Make the file executable (`chmod +x script-file`) and run it directly. The
-shebang line, if present, is ignored. Script mode reuses the same command
-parser, JavaScript evaluator, variables, and pipelines as the interactive
-shell, and supports explicit executable JavaScript state files through
-`save [path]` and `load [path]`; it does not automatically persist session
-changes. The process exits with a
-non-zero status if a command fails or the script file cannot be read, and
-with status 0 on normal completion or an explicit `exit`/`quit`. This is a
-minimal, currently supported subset of script execution; see #65 for further
-script-mode work such as positional arguments.
-
-If present, `~/.config/akamai-shell/startup.js` is evaluated when the backend
-starts. It can define default variables or adjust `config`; an explicit
-`load` command can then override those defaults from `state.js`.
-
-A JavaScript statement may span multiple lines; consecutive lines are joined
-until brackets, braces, parentheses, and quotes are balanced, so a `for`/`if`
-block or multi-line object/array literal executes as one statement:
+Make it executable with `chmod +x script-file` and run it directly. Arguments
+after the script path are available through the normal Node.js interface:
 
 ```bash
-#!/usr/bin/env akamai-shell
+akamai-shell script.as foo bar
+```
+
+`process.argv[2]` is `foo` and `process.argv[3]` is `bar`. Script execution
+returns status 0 for normal completion or explicit `exit`/`quit`, and a
+non-zero status for command failures, unreadable files, malformed input, or
+unterminated statements.
+
+Script files use the same command parser, API dispatcher, JavaScript session,
+variables, pipelines, request options, and error handling as interactive use.
+They do not automatically save changes made during execution; use `save` when
+a script needs to write state.
+
+## Configuration and session state
+
+There are three related kinds of state:
+
+1. `config` is the live runtime configuration dictionary. It contains settings
+   such as `edgerc`, `edgercSection`, `target`, `timeout`, and recording
+   options. It can also be read or changed with normal JavaScript.
+2. `set` is the concise command interface for known configuration values.
+   Scalar settings use `set name value`; structured settings use dotted paths,
+   such as `set target.contractId ctr_example`. The existing
+   `set accountSwitchKey`, `set contractId`, and `set groupId` forms update
+   the corresponding fields under `config.target` as shorthand.
+3. User-defined JavaScript variables and functions live in the current backend
+   session. They can be written to or loaded from an executable JavaScript
+   state file.
+
+Examples:
+
+```text
+set edgerc ~/.edgerc
+set edgercSection papi
+set target.accountSwitchKey B-C-1ED34DK
+set target.contractId ctr_example
+set target.groupId grp_example
+set timeout.default 15000
+show config
+```
+
+`save [file]` writes the current persistable user variables, functions, and
+configuration as executable JavaScript. With no path, it uses
+`~/.config/akamai-shell/state.js`. `load [file]` evaluates a saved state file
+in the current session and then synchronizes the live configuration; with no
+path it loads that default `state.js`.
+
+`~/.config/akamai-shell/startup.js` is the only file loaded automatically when
+the backend starts. It is intended for defaults, helper functions, or initial
+configuration. An explicit `load` command can load `state.js` or another file
+after startup and can therefore override values established by `startup.js`.
+Neither `save` nor `load` copies credential secrets into output; use normal
+file permissions for files containing sensitive configuration.
+
+The `show` command displays the session namespace or one expression:
+
+```text
+show
+show config
+show properties.groups.items
+```
+
+## JavaScript integration
+
+Input that is not a recognized shell command is evaluated as JavaScript in the
+current session. Assignments, expressions, arrays, objects, properties,
+indices, filters, functions, and console methods are supported:
+
+```javascript
+groups = await $("get /papi/v1/groups")
+matching = groups.groups.items.filter(group =>
+  group.groupName.includes("production")
+)
+```
+
+The `$()` helper runs an internal shell command and returns its decoded result
+without printing the nested command output. It can run API commands or local
+shell pipelines:
+
+```javascript
+properties = await $(`get /papi/v1/properties | jq '.properties.items[]'`)
+contents = await $('! cat data.json')
+```
+
+Interactive and script execution have one important difference: interactive
+`$()` substitutions are automatically awaited, while script-mode `$()` keeps
+its Promise semantics. Use explicit top-level `await` in scripts when the
+result is needed immediately:
+
+```javascript
+properties = await $("get /papi/v1/properties")
+```
+
+JavaScript values can be used in later requests:
+
+```text
+put -v "$rules" /papi/v1/properties/prp_example/versions/1/rules
+get /papi/v1/properties/$properties["properties"]["items"][0]["propertyId"]
+```
+
+Add a semicolon to suppress the displayed result of a JavaScript statement:
+
+```text
+value = 123;
+```
+
+Script files support multi-line JavaScript statements. Consecutive lines are
+joined until brackets, braces, parentheses, and quotes are balanced:
+
+```javascript
 data = []
 for (let i = 0; i < 100; i++) {
-  data[i] = $('get /papi/v1/properties')
+  data[i] = await $('get /papi/v1/properties')
 }
 show data
 ```
 
-A script that ends with an unterminated statement (e.g. a missing closing
-brace) exits with a non-zero status and a clear error. This multi-line
-joining currently applies only to script files, not the interactive shell,
-where each line is still executed as it is entered.
+The interactive prompt evaluates one entered line at a time; it does not
+provide script-style multi-line accumulation or a continuation prompt.
 
-JavaScript code (in scripts and interactively) can use the real Node.js
-`process` object and a `require()` function, just like a normal Node.js
-script:
+Lines whose trimmed content starts with `#` are skipped as comments in script
+files. This is script-only syntax. At the interactive prompt, input is
+JavaScript, so `# comment` is not a comment and will produce a JavaScript
+error.
 
-```bash
-#!/usr/bin/env akamai-shell
-os = require('os')
-show os.hostname()
-show process.argv
-```
+## JavaScript and Node.js
 
-Arguments after the script path are available through `process.argv`, using
-the usual Node.js layout: `process.argv[0]` is the Node executable,
-`process.argv[1]` is the script path, and `process.argv[2]` onward contain
-the arguments passed to the script:
+The backend is a persistent native Node.js CommonJS context, so JavaScript
+works similarly to a Node.js session but is not a replacement for a normal
+Node.js program.
 
-```bash
-akamai-shell script.as foo bar
-# process.argv[2] === "foo"
-# process.argv[3] === "bar"
-```
+Available Node.js features include:
 
-In a script, `require()` resolves relative paths and `node_modules` against
-the script file's own directory. In the interactive shell, it resolves
-against the shell's current working directory. `process`/`require` are not
-persisted to state files, listed by `show` (with no
-arguments), or offered as variable-name completions.
+- `process`, including `process.argv` during script execution
+- CommonJS `require()`
+- `Buffer`, `URL`, `URLSearchParams`, `AbortController`, `Blob`,
+  `FormData`, `Headers`, `Request`, `Response`, timers, `structuredClone`,
+  `performance`, and `fetch` when supported by the installed Node.js version
+- `global`, which aliases the backend's `globalThis`
 
-Common Node.js globals are also available in the native Node.js backend, including
-`Buffer`, `URL`, `URLSearchParams`, `AbortController`, `Blob`, `FormData`,
-`Headers`, `Request`, `Response`, `setTimeout`, `setInterval`,
-`setImmediate`, `queueMicrotask`, `structuredClone`, `performance`, and
-`fetch` when supported by the installed Node.js version. `global` aliases
-the backend's `globalThis`.
+`require()` resolves relative files and `node_modules` from the script file's
+directory in script mode, and from the shell's current working directory in
+interactive mode. Loaded modules are runtime values and are not persisted as
+session state. The shell does not install packages automatically.
 
-## Quick command reference
+Static ES module `import` syntax is not supported. It would require a separate
+ESM evaluation model that conflicts with the persistent mixed shell/JavaScript
+context. Dynamic `import()` is also not part of the supported interface.
+CommonJS `require()` is the supported module-loading mechanism.
 
-| Command | Purpose |
+The shell adds its own command parser, API transport, pipelines, completion,
+contextual help, recording, and session persistence. It is trusted local code:
+`require()` can expose filesystem, subprocess, and network capabilities.
+
+## Command reference
+
+### API requests
+
+| Command | Behavior |
 | --- | --- |
-| `get <api-path> [name==value ...]` | Make an authenticated GET request. |
-| `post <api-path> [name=value ...]` | Make a JSON POST request. |
-| `put <api-path> [name=value ...]` | Make a JSON PUT request. |
-| `post|put -v <expression> <api-path>` | Use a JSON-serializable JavaScript value as the complete body. |
-| `get -f <file> <api-path>` | Write formatted GET JSON to a file. |
-| `post|put -f <file> <api-path>` | Read a JSON request body from a file. |
-| `find <api-path> -q <rule>` | Fetch one response and find matching dictionaries locally. |
-| `set <name> <value>` | Set a known configuration value; JavaScript assignment supports arbitrary values. |
-| `show [expression]` | Display the session namespace or one JSON value. |
-| `echo <text> [\| command]` | Print expanded text, optionally through a local shell pipeline. |
-| `record auto\|on\|off` | Control redacted in-memory request recording; `auto` keeps the latest request only. |
-| `record show [--http]` | Display captured JSONL or HTTP-style records. |
-| `history` | Display command history. |
-| `save [file]` | Save portable user variables and functions as executable JavaScript. |
-| `load [file]` | Load an executable JavaScript state file. |
-| `help` / `?` | Display command help. |
-| `exit` / `quit` | Leave the shell. |
-| `! <command>` | Run a local shell command. |
+| `get <api-path> [name==value ...]` | Authenticated GET. Query arguments use `name==value`. |
+| `get -f <file> <api-path> ...` | Write formatted response JSON to `<file>` instead of the terminal. |
+| `post <api-path> [arguments ...]` | Authenticated JSON POST. |
+| `put <api-path> [arguments ...]` | Authenticated JSON PUT. |
+| `post|put -f <file> <api-path> ...` | Load an object body from `<file>`; inline fields override file fields. |
+| `post|put -v <expression> <api-path> ...` | Use a JavaScript object as the initial body; inline fields merge over it. |
+| `find <api-path> -q <rule>` | Fetch one collection response and find matching dictionaries locally. |
 
-Body fields use HTTPie-style syntax:
+HTTPie-style arguments use these operators:
 
 ```text
+name==value       query parameter
+name=value        string JSON body field
+name:=value       JSON-decoded body field
+```
+
+For example:
+
+```text
+get /papi/v1/properties groupId==grp_example
 post /edge-diagnostics/v1/curl url=https://example.test timeout:=30 enabled:=true
 put -v "$payload" /some/path name=updated
 ```
 
-`name=value` merges a string field into a POST or PUT JSON body. `name:=value`
-parses the value as JSON, so numbers, booleans, arrays, objects, and `null`
-remain typed. Query parameters use `name==value` for all methods, either in
-the path or as separate arguments. GET arguments must use the `==` form.
-With `-v`, the referenced JSON object is used as the initial body and
-parameter arguments merge over it.
-
-API paths include their service prefix, for example:
+API paths include their service prefix:
 
 ```text
 get /papi/v1/properties
@@ -227,152 +289,101 @@ get /cloudlets/v3/policies/371861/versions
 get /edge-diagnostics/v1/curl
 ```
 
-Press Tab while entering a command to complete command names, static API
-segments, query parameters, and dynamic identifiers fetched from collection
-endpoints. Completion is method-aware for `get`, `post`, and `put`; write
-commands can use read-only descendants when the API metadata does not declare
-a write operation for that descendant. A collection completion inserts `/` so
-the next Tab can request dynamic IDs. Failed or empty completion lookups
-remain silent.
+### Session and local commands
 
-Type `?` in an API command to display the parameters supported at that
-position. Parameter help is derived from the OpenAPI metadata, preserves the
-input buffer, and distinguishes query fields (`name==value`) from string body
-fields (`name=value`) and typed JSON body fields (`name:=value`). A literal
-question mark inside quotes is not treated as help.
+| Command | Behavior |
+| --- | --- |
+| `set <name> <value>` | Set a known scalar setting. |
+| `set <object>.<property> <value>` | Set a value in a structured setting, such as `set target.groupId grp_example`. |
+| `show [expression]` | Display the session namespace or one expression. |
+| `echo <text> [\| command]` | Print expanded text and optionally pipe it to a local command. |
+| `! <command>` or `!<command>` | Run a local shell command. |
+| `history` | Show a numbered command history; it can be piped. |
+| `record auto\|on\|off` | Control redacted in-memory request recording. `auto` keeps the latest request. |
+| `record show [--http]` | Display captured JSONL or HTTP-style records. |
+| `save [file]` | Save persistable session variables, functions, and configuration as JavaScript. |
+| `load [file]` | Evaluate a state file in the current session. |
+| `help` or `?` | Display built-in command help. |
+| `exit` or `quit` | Leave the shell. |
 
-## JavaScript integration
-
-Lines that are not shell commands are evaluated as JavaScript in the current
-session. Values can be assigned, updated, indexed, filtered, and passed to
-later requests:
-
-```javascript
-config.target = {
-  accountSwitchKey: "your-account-switch-key",
-  contractId: "your-contract-id",
-  groupId: "your-group-id"
-}
-
-groups = await $("get /papi/v1/groups")
-groups.groups.items
-
-matching = groups.groups.items.filter(group =>
-  group.groupName.includes("production")
-)
-```
-
-The asynchronous `$()` helper runs an internal GET and returns the decoded
-response body without printing the nested command output. It also supports a
-local pipeline:
-
-```javascript
-properties = $(`get /papi/v1/properties | jq '.properties.items[]'`)
-```
-
-It can also capture a local shell command. This is useful for loading external
-JSON into the JavaScript session:
-
-```javascript
-foo = $('! cat foo.json')
-```
-
-Shell output is parsed as JSON when possible; non-JSON output remains a string.
-
-The `echo` command can pipe expanded JSON variables to local tools:
+Commands can be piped to local programs:
 
 ```text
-echo "$foo" | jq '. | keys'
+get /papi/v1/properties | jq '.properties.items[]'
+record show --http | head -20
+history | grep properties
 ```
 
-JavaScript values can be used as complete POST or PUT bodies. Quoting a
-variable keeps a JSON value containing spaces or quotes together:
+## Completion and contextual help
 
-```javascript
-rules = await $("get /papi/v1/properties/prp_example/versions/1/rules")
-```
+Tab completion is available in the interactive prompt and uses the current
+session, OpenAPI metadata, configured API modules, `PATH`, and the current
+working directory.
+
+API and command completion includes:
+
+- Command names and HTTP methods.
+- Static API path segments and service prefixes.
+- Dynamic identifiers fetched from collection endpoints, such as properties,
+  versions, edge hostnames, and policy IDs.
+- Query parameters and write-body fields with the correct operator:
+  `name==`, `name=`, or `name:=`.
+- Paths containing variables, while preserving the original variable syntax.
+- `post` and `put` descendants where the API metadata supports them.
+
+JavaScript and configuration completion includes:
+
+- Session variables and function names.
+- Object keys, array indices, properties, and `show` expressions.
+- Structured settings such as `set target.<TAB>`.
+- A trailing `.` for an exact object-valued key and a trailing space for an
+  exact scalar leaf.
+
+Shell completion includes executable names from `PATH` at command positions
+and files/directories relative to the current working directory:
 
 ```text
-put -v "$rules" /papi/v1/properties/prp_example/versions/1/rules
+! cat ./dat<TAB>
+get /papi/v1/properties | jq ./scripts/<TAB>
 ```
 
-The shell also supports property and index expansion in command arguments:
+Completion also works after leading whitespace. Failed or empty dynamic
+lookups remain silent.
+
+Type `?` in an API command to show the parameters supported at the current
+position. The help is derived from the applicable OpenAPI operation, includes
+short descriptions, and distinguishes query fields from string and typed JSON
+body fields:
 
 ```text
-get /papi/v1/properties/$properties["properties"]["items"][0]["propertyId"]
-show matching[0]
+get /papi/v1/properties ?
+post /edge-diagnostics/v1/curl url=https://example.test ?
+put /papi/v1/properties/prp_example/versions/1/rules createFromVersion:?
 ```
 
-Functions are available for the current session, but external Node.js module
-loading is available through the backend's `require()` function. Function
-values are not persisted as environment JSON. Add a semicolon to suppress the
-display of a JavaScript statement's result, for example `value = 123;`.
+The question mark is consumed only in a recognized API-help context. A
+question mark inside quotes remains literal, and the input buffer is preserved
+while help is displayed.
 
-The `history` command prints a numbered list and can be piped to local
-commands. `record auto` keeps the latest completed redacted request,
-`record on` keeps all requests, and `record off` disables capture. `record
-show` prints JSONL while `record show --http` prints HTTP-style traces.
-Commands beginning with `!` run through the local shell, so both `!pwd` and
-`! pwd` are valid. Ctrl+R starts reverse incremental history search; accept a
+## Recording and history
+
+`record auto` is the default and retains the latest completed redacted
+request, including failures. `record on` retains all redacted records for the
+session, and `record off` disables recording. `record show` emits JSONL;
+`record show --http` emits an HTTP-style trace.
+
+History is stored locally with restrictive permissions and is displayed as a
+numbered list. Ctrl+R starts reverse incremental history search; accept a
 match with the normal readline editing keys before executing it.
-
-## Example interactive session
-
-```text
-$ npm start
-akamai> config.edgerc = "~/.edgerc"
-akamai> config.edgercSection = "papi"
-"papi"
-akamai> groups = await $("get /papi/v1/groups")
-akamai> groups.groups.items.filter(g => g.groupName.includes("production"))
-[
-  {
-    "groupName": "production",
-    "groupId": "grp_example",
-    "parentGroupId": "grp_parent",
-    "contractIds": ["ctr_example"]
-  }
-]
-akamai> get /papi/v1/properties groupId==grp_example
-{
-  "properties": {
-    "items": [
-      {
-        "propertyId": "prp_example",
-        "propertyName": "www.example.com",
-        "latestVersion": 12
-      }
-    ]
-  }
-}
-akamai> properties = await $("get /papi/v1/properties groupId==grp_example")
-akamai> find /papi/v1/properties -q 'propertyName=~example'
-[
-  {
-    "path": "/papi/v1/properties/prp_example",
-    "resource": {
-      "propertyId": "prp_example",
-      "propertyName": "www.example.com",
-      "latestVersion": 12
-    }
-  }
-]
-akamai> get /papi/v1/properties | jq '.properties.items[] | .propertyName'
-"www.example.com"
-akamai> exit
-```
-
-`find` makes exactly one GET request for the supplied path and scans that
-response locally; it does not recursively fetch child resources.
 
 ## Development
 
-Run the test suite with:
+Run the complete test suite with:
 
 ```bash
 npm test
 ```
 
 The executable entry point is `src/main.js`. API-specific behavior lives in
-modules under `src/apis/`, while the generic transport, request parsing,
-completion, and JavaScript session behavior are implemented in `src/`.
+modules under `src/apis/`; generic transport, request parsing, completion, and
+JavaScript session behavior live in `src/`.
