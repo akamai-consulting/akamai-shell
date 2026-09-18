@@ -15,6 +15,38 @@ const { createRecorder } = require('./recorder');
 const DEFAULT_TIMEOUT = 10000;
 const DEFAULT_STATE_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'state.js');
 const DEFAULT_STARTUP_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'startup.js');
+const HELP_TEXT = `Commands:
+========
+Requests:
+  get <api-path> [name==value ...]     GET a resource
+  get -f <file> <api-path>             Save formatted GET JSON
+  post <api-path> [body ...]           POST a JSON body
+  put <api-path> [body ...]            PUT a JSON body
+  post|put -v <expression> <api-path>  Use a JavaScript value as the body
+  post|put -f <file> <api-path>        Read the JSON body from a file
+
+  Query fields use name==value.
+  Body fields use name=value (string) or name:=value (JSON).
+
+Data and shell:
+  find <api-path> -q <rule>            Find matching dictionaries in one GET
+  show [<expression>]                  Show variables or one JSON value
+  echo <text> [| command]              Print or pipe expanded text
+  ! <shell command>                    Run a local shell command
+
+Session:
+  config.<name> = <value>              Change a session setting
+  set <name> <value>                   Change a known session setting
+  record auto|on|off                   Control HTTP recording
+  record show [--http]                Display captured records
+  history                              Show command history
+  save [file]                          Save executable JavaScript state
+  load [file]                          Load executable JavaScript state
+  help, ?                              Show this help
+  exit, quit                           Exit the shell
+
+Other input is evaluated as JavaScript. Press Tab for command and API
+completion. Press ? for contextual API parameter help.`;
 
 function asText(value) {
   if (typeof value === 'string') return value;
@@ -500,7 +532,7 @@ class Backend {
     if (!parsed) return (await this.evaluate(source)).value;
     this.syncSettings();
     if (parsed.command === '?' || parsed.command === 'help') {
-      return 'get [-f <file>] <api-path> [query]\npost|put [-f <file>] [-v <json>] <api-path> [name=value|name:=json]\nfind <api-path> -q <match-rule>\nset <name> <value>\necho <value>\nhistory\nrecord (auto|on|off|show)\nshow\nsave [path]\nload [path]\nhelp\nexit';
+      return HELP_TEXT;
     }
 
     if (parsed.command === 'exit' || parsed.command === 'quit') return { exited: true };

@@ -221,7 +221,7 @@ test('pipes every command result, including help and shell escapes', async () =>
   input.write('{"id":49,"type":"command","source":"!printf hello"}\n');
   await settle();
   await backend.queue;
-  assert.equal(messages.find((message) => message.id === 47 && message.type === 'result').result, 'get [-f <file>] <api-path> [query]\n');
+  assert.equal(messages.find((message) => message.id === 47 && message.type === 'result').result, 'Commands:\n');
   assert.equal(messages.find((message) => message.id === 48 && message.type === 'result').result, 'hello');
   assert.equal(messages.find((message) => message.id === 49 && message.type === 'result').result, 'hello');
   await backend.shutdown();
