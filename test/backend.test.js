@@ -199,7 +199,9 @@ test('saves and loads the new executable JavaScript state format', async (t) => 
   await settle();
   await backend.queue;
   assert.equal(messages.find((message) => message.id === 20 && message.type === 'result').result.value, 49);
-  assert.match(fs.readFileSync(stateFile, 'utf8'), /globalThis\.config/);
-  assert.match(fs.readFileSync(stateFile, 'utf8'), /globalThis\.savedValue/);
+  const stateSource = fs.readFileSync(stateFile, 'utf8');
+  assert.match(stateSource, /globalThis\.config/);
+  assert.match(stateSource, /globalThis\.savedValue/);
+  assert.match(stateSource, /"custom": 7/);
   await backend.shutdown();
 });

@@ -400,7 +400,7 @@ class Backend {
         lines.push(`globalThis.${name} = ${Function.prototype.toString.call(original)};`);
         continue;
       }
-      const serialized = JSON.stringify(value);
+      const serialized = JSON.stringify(value, null, 2);
       if (serialized !== undefined) lines.push(`globalThis.${name} = ${serialized};`);
     }
     fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
