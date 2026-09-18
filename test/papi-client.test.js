@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { get, requestMethod, validateRequiredParameters } = require('../src/papi-client');
+const { createRecorder } = require('../src/recorder');
 
 function fakeClientFactory(requests, body) {
   return () => ({
@@ -221,5 +222,24 @@ test('filters settings to query parameters supported by each resource', async ()
   assert.deepEqual(requests[0].qs, {
     contractId: 'ctr_default',
     groupId: 'grp_default'
+  });
+
+  test('preserves request recording while filtering settings', async () => {
+    const requests = [];
+    const recorder = createRecorder();
+    recorder.setMode('on');
+    await get(
+      {
+        edgerc: '/tmp/test-edgerc',
+        edgercSection: 'papi',
+        recorder,
+        parameterDefaults: { edgercSection: 'papi' }
+      },
+      '/properties',
+      { contractId: 'ctr', groupId: 'grp' },
+      fakeClientFactory(requests, { properties: { items: [] } })
+    );
+    assert.equal(recorder.records.length, 1);
+    assert.equal(recorder.records[0].request.path, '/papi/v1/properties');
   });
 });

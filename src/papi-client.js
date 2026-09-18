@@ -65,7 +65,9 @@ async function get(settings, apiPath, query = {}, clientFactory = transport.crea
   }
   validateRequiredParameters(normalizedPath, qs);
 
-  return transport.request({ ...settings, parameterDefaults: {} }, normalizedPath, qs, clientFactory, PAPI_PREFIX, {
+  return transport.request({
+    ...settings, parameterDefaults: {}, recorder: settings.recorder
+  }, normalizedPath, qs, clientFactory, PAPI_PREFIX, {
     Accept: 'application/json',
     'PAPI-Use-Prefixes': 'true'
   });
@@ -87,7 +89,9 @@ async function requestMethod(settings, apiPath, method, query = {}, body,
     if (target.groupId && supported.has('groupId') && qs.groupId === undefined) qs.groupId = target.groupId;
   }
   validateRequiredParameters(normalizedPath, qs);
-  return transport.requestMethod({ ...settings, parameterDefaults: {} }, normalizedPath, method, qs, body, clientFactory,
+  return transport.requestMethod({
+    ...settings, parameterDefaults: {}, recorder: settings.recorder
+  }, normalizedPath, method, qs, body, clientFactory,
     PAPI_PREFIX, {
       Accept: 'application/json',
       'PAPI-Use-Prefixes': 'true'
