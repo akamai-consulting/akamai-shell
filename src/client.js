@@ -8,7 +8,7 @@ const { spawn } = require('node:child_process');
 const { isStatementComplete } = require('./statement-completion');
 
 const SHELL_COMMAND_PATTERN =
-  /^(?:get|post|put|find|show|set|echo|record|history|save|load|help|\?|exit|quit|!)(?:\s|$)/;
+  /^(?:get|post|put|find|show|echo|record|history|save|load|help|\?|exit|quit|!)(?:\s|$)/;
 const HISTORY_SIZE = 1000;
 
 function formatResult(value) {
