@@ -19,6 +19,12 @@ test('parses find query match forms', () => {
   assert.deepEqual(parseMatchRule('~=~log'), {
     field: '', fieldSubstring: true, value: 'log', valueSubstring: true
   });
+  assert.deepEqual(parseMatchRule('~name=log'), {
+    field: 'name', fieldSubstring: true, value: 'log', valueSubstring: false
+  });
+  assert.deepEqual(parseMatchRule('~=tai-ionp-00'), {
+    field: '', fieldSubstring: true, value: 'tai-ionp-00', valueSubstring: false
+  });
 });
 
 test('matches exact and substring field/value criteria', () => {
@@ -27,6 +33,9 @@ test('matches exact and substring field/value criteria', () => {
   assert.equal(matchesRule(resource, parseMatchRule('propertyName=~log')), true);
   assert.equal(matchesRule(resource, parseMatchRule('~Name=~LOG')), false);
   assert.equal(matchesRule(resource, parseMatchRule('~=~tai')), true);
+  assert.equal(matchesRule(resource, parseMatchRule('~Name=tai-log-00')), true);
+  assert.equal(matchesRule(resource, parseMatchRule('~=tai-log-00')), true);
+  assert.equal(matchesRule(resource, parseMatchRule('~=tai-log')), false);
 });
 
 test('parses find path and query option', () => {

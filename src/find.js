@@ -4,9 +4,8 @@ const apiRegistry = require('./api-registry');
 
 function parseMatchRule(rule) {
   const match = String(rule || '').match(/^(~?)([^=]*)=(~?)(.*)$/);
-  if (!match || (!match[2] && !match[1]) || (!match[4] && match[3] === '~') ||
-      (match[1] === '~' && match[3] !== '~')) {
-    throw new Error('Invalid find query. Use field=value, field=~value, ~field=~value, or ~=~value');
+  if (!match || (!match[2] && !match[1]) || (!match[4] && match[3] === '~')) {
+    throw new Error('Invalid find query. Use field=value, field=~value, ~field=value, ~field=~value, or ~=value');
   }
   const [, fieldMarker, field, valueMarker, value] = match;
   return {
