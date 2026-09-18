@@ -380,15 +380,29 @@ class Backend {
     if (parsed.command === 'save') return this.saveState(parsed.filePath);
     if (parsed.command === 'load') return this.loadState(parsed.filePath);
     if (parsed.command === 'show') {
-      const visible = {
+      const config = {
         edgerc: this.settings.edgerc,
         edgercSection: this.settings.edgercSection,
-        accountSwitchKey: this.settings.accountSwitchKey,
-        contractId: this.settings.contractId,
-        groupId: this.settings.groupId,
-        recordMode: this.settings.recordMode
+        target: this.settings.target,
+        recordMode: this.settings.recordMode,
+        parameterDefaults: this.settings.parameterDefaults
       };
-      if (parsed.name) return visible[parsed.name] ?? globalThis[parsed.name];
+      if (parsed.name === 'config') return config;
+      if (parsed.name) return globalThis[parsed.name];
+      const visible = { config };
+      for (const name of Object.keys(globalThis)) {
+        if (this.initialGlobals.has(name) ||
+            ['$', 'config', '__filename', '__dirname', 'require', 'module', 'exports'].includes(name)) {
+          continue;
+        }
+        const value = globalThis[name];
+        try {
+          JSON.stringify(value);
+          visible[name] = value;
+        } catch {
+          // Exclude non-serializable runtime values from namespace output.
+        }
+      }
       return visible;
     }
     const method = parsed.command.toUpperCase();

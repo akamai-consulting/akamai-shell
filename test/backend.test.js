@@ -107,11 +107,14 @@ test('exposes config target values to API dispatch', async () => {
 test('set and show expose only non-sensitive backend settings', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":5,"type":"command","source":"set edgerc-section staging"}\n');
+  input.write('{"id":51,"type":"evaluate","source":"visibleValue = 42"}\n');
   input.write('{"id":6,"type":"command","source":"show"}\n');
   await settle();
   await backend.queue;
   assert.equal(messages.find((message) => message.id === 5 && message.type === 'result').result['edgerc-section'], 'staging');
-  assert.equal(messages.find((message) => message.id === 6 && message.type === 'result').result.edgercSection, 'staging');
+  const state = messages.find((message) => message.id === 6 && message.type === 'result').result;
+  assert.equal(state.config.edgercSection, 'staging');
+  assert.equal(state.visibleValue, 42);
   await backend.shutdown();
 });
 
