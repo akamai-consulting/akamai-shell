@@ -3,6 +3,8 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { PassThrough } = require('node:stream');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createBackend } = require('../src/backend');
 
 function harness(options = {}) {
@@ -158,5 +160,21 @@ test('initializes native script module bindings and arguments', async () => {
     messages.find((message) => message.id === 15 && message.type === 'result').result.value,
     ['/tmp/example-script.as', 'one', '/tmp', 'function']
   );
+  await backend.shutdown();
+});
+
+test('saves and loads the new executable JavaScript state format', async (t) => {
+  const stateFile = path.join('/tmp', `akamai-shell-state-${process.pid}.js`);
+  t.after(() => fs.rmSync(stateFile, { force: true }));
+  const { input, messages, backend } = harness();
+  input.write('{"id":16,"type":"evaluate","source":"savedValue = { answer: 42 }"}\n');
+  input.write(JSON.stringify({ id: 17, type: 'command', source: `save ${stateFile}` }) + '\n');
+  input.write('{"id":18,"type":"evaluate","source":"savedValue = undefined"}\n');
+  input.write(JSON.stringify({ id: 19, type: 'command', source: `load ${stateFile}` }) + '\n');
+  input.write('{"id":20,"type":"evaluate","source":"savedValue.answer"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(messages.find((message) => message.id === 20 && message.type === 'result').result.value, 42);
+  assert.match(fs.readFileSync(stateFile, 'utf8'), /globalThis\.savedValue/);
   await backend.shutdown();
 });
