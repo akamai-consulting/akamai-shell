@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const { PassThrough } = require('stream');
 const { createRepl } = require('./repl');
 
@@ -85,7 +86,7 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
   const replInput = new PassThrough();
   const replOutput = new PassThrough();
   replOutput.resume();
-  const repl = createRepl(replOutput, replInput, undefined, null);
+  const repl = createRepl(replOutput, replInput, undefined, null, path.dirname(path.resolve(filePath)));
 
   let exitCode = 0;
   let pendingStatement = '';

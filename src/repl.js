@@ -5,6 +5,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const Module = require('module');
 const vm = require('vm');
 const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
@@ -809,7 +810,8 @@ function runShellCommandCapture(command, input) {
   });
 }
 
-function createRepl(output = process.stdout, input = process.stdin, requestGet, historyFile = HISTORY_FILE) {
+function createRepl(output = process.stdout, input = process.stdin, requestGet, historyFile = HISTORY_FILE,
+  requireBasePath = process.cwd()) {
   // A null historyFile requests an ephemeral session (used for script execution):
   // history and the parameter/variable environment are never written to disk.
   // The saved environment is still loaded at startup so that `.edgerc`,
@@ -951,6 +953,20 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
       warn: writeConsole,
       error: writeConsole
     },
+    enumerable: false
+  });
+  // Expose the real Node.js `process` object and a `require` scoped to
+  // requireBasePath (the running script's directory, or the shell's cwd for
+  // an interactive session), so script/JS-eval code can use them exactly
+  // like a normal Node.js script. Both are non-enumerable so they are never
+  // persisted to the saved environment file, listed by `show`, or offered as
+  // variable-name completions.
+  Object.defineProperty(variables, 'process', {
+    value: process,
+    enumerable: false
+  });
+  Object.defineProperty(variables, 'require', {
+    value: Module.createRequire(path.join(requireBasePath, 'akamai-shell-script.js')),
     enumerable: false
   });
   Object.defineProperty(variables, '$', {

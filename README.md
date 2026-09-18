@@ -131,6 +131,23 @@ brace) exits with a non-zero status and a clear error. This multi-line
 joining currently applies only to script files, not the interactive shell,
 where each line is still executed as it is entered.
 
+JavaScript code (in scripts and interactively) can use the real Node.js
+`process` object and a `require()` function, just like a normal Node.js
+script:
+
+```bash
+#!/usr/bin/env akamai-shell
+os = require('os')
+show os.hostname()
+show process.argv
+```
+
+In a script, `require()` resolves relative paths and `node_modules` against
+the script file's own directory. In the interactive shell, it resolves
+against the shell's current working directory. `process`/`require` are not
+persisted to the saved environment file, listed by `show` (with no
+arguments), or offered as variable-name completions.
+
 ## Quick command reference
 
 | Command | Purpose |
