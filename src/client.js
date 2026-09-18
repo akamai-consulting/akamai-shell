@@ -111,6 +111,10 @@ class BackendClient {
     return this.request('complete', { code, cursor }, 1000);
   }
 
+  contextHelp(source) {
+    return this.request('context-help', { source }, 1000);
+  }
+
   async close() {
     if (this.closed) return;
     try {
@@ -231,6 +235,25 @@ async function runInteractive(options = {}) {
       rl._refreshLine();
     };
 
+    const showContextHelp = () => {
+      if (rl.cursor !== rl.line.length ||
+          !/\s$/.test(rl.line) ||
+          !/^(?:get|post|put)\s+\S+\s+$/.test(rl.line)) {
+        return false;
+      }
+      backend.contextHelp(rl.line).then((entries) => {
+        output.write('\n');
+        for (const entry of entries) {
+          output.write(`  ${entry.name}${entry.description ? ` - ${entry.description}` : ''}\n`);
+        }
+      }).catch((error) => {
+        errorOutput.write(`${error.name}: ${error.message}\n`);
+      }).finally(() => {
+        if (!rl.closed) rl._refreshLine();
+      });
+      return true;
+    };
+
     const ttyWrite = rl._ttyWrite.bind(rl);
     rl._ttyWrite = (character, key) => {
       if (!searching) {
@@ -241,6 +264,9 @@ async function runInteractive(options = {}) {
           savedLine = rl.line;
           savedCursor = rl.cursor;
           refreshSearch();
+          return;
+        }
+        if (character === '?' && (!key || (!key.ctrl && !key.meta)) && showContextHelp()) {
           return;
         }
         ttyWrite(character, key);

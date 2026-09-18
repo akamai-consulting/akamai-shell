@@ -341,6 +341,32 @@ test('provides JavaScript and shell completion through the backend', async () =>
   await backend.shutdown();
 });
 
+test('provides OpenAPI parameter context help without changing the input', async () => {
+  const registry = {
+    parameterHelp: () => [
+      { name: 'contractId', description: 'The contract identifier. Used for filtering.' },
+      { name: 'groupId', description: 'The group identifier.' },
+      { name: 'contractId', description: 'Duplicate entry.' }
+    ]
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write(JSON.stringify({
+    id: 52,
+    type: 'context-help',
+    source: 'get /papi/v1/properties '
+  }) + '\n');
+  await settle();
+  await backend.queue;
+  assert.deepEqual(
+    messages.find((message) => message.id === 52 && message.type === 'result').result,
+    [
+      { name: 'contractId', description: 'The contract identifier.' },
+      { name: 'groupId', description: 'The group identifier.' }
+    ]
+  );
+  await backend.shutdown();
+});
+
 test('initializes native script module bindings and arguments', async () => {
   const { input, messages, backend } = harness();
   input.write(JSON.stringify({

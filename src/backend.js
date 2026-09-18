@@ -341,6 +341,9 @@ class Backend {
         case 'complete':
           result = await this.complete(request.source || request.code || '', request.cursor);
           break;
+        case 'context-help':
+          result = await this.contextHelp(request.source || request.code || '');
+          break;
         case 'exit':
           result = { exited: true };
           this.write({ id, type: 'result', result });
@@ -648,6 +651,7 @@ class Backend {
           replacement: `show ${variableCompletion.replacement}`
         });
       }
+
       if (/^[A-Za-z_$][\w$]*$/.test(expression)) {
         return new Promise((resolve, reject) => {
           this.repl.complete(expression, (error, result) => {
@@ -746,6 +750,25 @@ class Backend {
       // retain cursor handling for custom REPL implementations.
       this.repl.completer(source, callback);
     });
+  }
+
+  contextHelp(source) {
+    const match = String(source).match(/^(get|post|put)\s+(\S+)\s+$/);
+    if (!match) return [];
+    const [, method, pathToken] = match;
+    const apiPath = this.expandCompletionPath(pathToken);
+    const parameters = this.apiRegistry.parameterHelp(method.toUpperCase(), apiPath);
+    const seen = new Set();
+    return parameters.reduce((result, parameter) => {
+      if (seen.has(parameter.name)) return result;
+      seen.add(parameter.name);
+      const description = String(parameter.description || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .split(/(?<=[.!?])\s+/)[0];
+      result.push({ name: parameter.name, description });
+      return result;
+    }, []);
   }
 
   completeVariableExpression(source) {
