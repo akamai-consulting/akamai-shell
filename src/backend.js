@@ -380,19 +380,11 @@ class Backend {
     if (parsed.command === 'save') return this.saveState(parsed.filePath);
     if (parsed.command === 'load') return this.loadState(parsed.filePath);
     if (parsed.command === 'show') {
-      const config = {
-        edgerc: this.settings.edgerc,
-        edgercSection: this.settings.edgercSection,
-        target: this.settings.target,
-        recordMode: this.settings.recordMode,
-        parameterDefaults: this.settings.parameterDefaults
-      };
-      if (parsed.name === 'config') return config;
       if (parsed.name) return globalThis[parsed.name];
-      const visible = { config };
+      const visible = {};
       for (const name of Object.keys(globalThis)) {
-        if (this.initialGlobals.has(name) ||
-            ['$', 'config', '__filename', '__dirname', 'require', 'module', 'exports'].includes(name)) {
+        if ((name !== 'config' && this.initialGlobals.has(name)) ||
+            ['$', '__filename', '__dirname', 'require', 'module', 'exports'].includes(name)) {
           continue;
         }
         const value = globalThis[name];
