@@ -283,7 +283,8 @@ async function runInteractive(options = {}) {
           refreshSearch();
           return;
         }
-        if ((character === '?' || key?.name === '?') &&
+        if ((character === '?' || key?.name === '?' || key?.name === 'question' ||
+             key?.sequence === '?') &&
             (!key || (!key.ctrl && !key.meta)) && showContextHelp()) {
           return;
         }
