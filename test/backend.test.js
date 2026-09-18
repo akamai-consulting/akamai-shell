@@ -29,6 +29,15 @@ test('handles initialize and evaluates in a persistent global context', async ()
   await backend.shutdown();
 });
 
+test('uses config timeout default for evaluations', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":21,"type":"evaluate","source":"config.timeout.default = 2500"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(backend.settings.timeout.default, 2500);
+  await backend.shutdown();
+});
+
 test('serializes requests and reports structured output and errors', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":"a","type":"evaluate","code":"console.log(\\"hello\\"); 1"}\n');

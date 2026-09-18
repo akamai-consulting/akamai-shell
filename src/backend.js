@@ -45,6 +45,10 @@ function loadSettings(options) {
     accountSwitchKey: parameters.accountSwitchKey || '',
     contractId: parameters.contractId || '',
     groupId: parameters.groupId || '',
+    timeout: {
+      default: Number(parameters.timeout?.default) || DEFAULT_TIMEOUT,
+      ...(parameters.timeout || {})
+    },
     target,
     parameterDefaults: { ...parameters },
     ...(options.settings || {})
@@ -151,6 +155,14 @@ class Backend {
     this.settings.recorder = createRecorder();
     Object.defineProperty(this.settings, 'recorder', { enumerable: false });
     this.settings.recorder.setMode(this.settings.recordMode || 'auto');
+    if (!this.settings.timeout || typeof this.settings.timeout !== 'object') {
+      this.settings.timeout = { default: DEFAULT_TIMEOUT };
+    }
+    if (!Number.isFinite(options.timeout)) {
+      this.timeout = this.settings.timeout.default;
+    } else {
+      this.settings.timeout.default = options.timeout;
+    }
     this.initialGlobals = new Set(Object.keys(globalThis));
     globalThis.config = this.settings;
     this.closed = false;
@@ -293,7 +305,10 @@ class Backend {
     try {
       const value = await new Promise((resolve, reject) => {
         let settled = false;
-        const duration = Number.isFinite(timeout) ? timeout : this.timeout;
+        const configuredTimeout = Number(this.settings.timeout?.default);
+        const duration = Number.isFinite(timeout)
+          ? timeout
+          : (Number.isFinite(configuredTimeout) ? configuredTimeout : this.timeout);
         const previousError = this.repl.lastError;
         this.repl.lastError = undefined;
         const timer = setTimeout(() => {
