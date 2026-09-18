@@ -20,6 +20,35 @@ const QUERY_PARAMETER_NAMES = new Set(apiRegistry.queryParameters());
 const QUERY_PARAMETER_CANDIDATES = [...QUERY_PARAMETER_NAMES].sort().map((name) => `${name}==`);
 const VARIABLE_PATTERN =
   /\$([A-Za-z_$][\w$]*(?:(?:\.[A-Za-z_$][\w$]*)|(?:\[(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\]]+)\]))*)/g;
+const NODE_GLOBAL_NAMES = [
+  'Buffer',
+  'URL',
+  'URLSearchParams',
+  'TextEncoder',
+  'TextDecoder',
+  'AbortController',
+  'AbortSignal',
+  'Blob',
+  'FormData',
+  'Headers',
+  'Request',
+  'Response',
+  'ReadableStream',
+  'WritableStream',
+  'TransformStream',
+  'setTimeout',
+  'clearTimeout',
+  'setInterval',
+  'clearInterval',
+  'setImmediate',
+  'clearImmediate',
+  'queueMicrotask',
+  'structuredClone',
+  'atob',
+  'btoa',
+  'fetch',
+  'performance'
+];
 const TARGET_FIELDS = ['accountSwitchKey', 'contractId', 'groupId'];
 const CONFIG_NAMES = [
   'edgerc', 'edgercSection', 'accountSwitchKey', 'target', 'contractId', 'groupId',
@@ -967,6 +996,18 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   });
   Object.defineProperty(variables, 'require', {
     value: Module.createRequire(path.join(requireBasePath, 'akamai-shell-script.js')),
+    enumerable: false
+  });
+  for (const name of NODE_GLOBAL_NAMES) {
+    if (name in globalThis) {
+      Object.defineProperty(variables, name, {
+        value: globalThis[name],
+        enumerable: false
+      });
+    }
+  }
+  Object.defineProperty(variables, 'global', {
+    value: variables,
     enumerable: false
   });
   Object.defineProperty(variables, '$', {

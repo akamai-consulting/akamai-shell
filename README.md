@@ -159,6 +159,14 @@ against the shell's current working directory. `process`/`require` are not
 persisted to the saved environment file, listed by `show` (with no
 arguments), or offered as variable-name completions.
 
+Common Node.js globals are also available inside the VM, including
+`Buffer`, `URL`, `URLSearchParams`, `AbortController`, `Blob`, `FormData`,
+`Headers`, `Request`, `Response`, `setTimeout`, `setInterval`,
+`setImmediate`, `queueMicrotask`, `structuredClone`, `performance`, and
+`fetch` when supported by the installed Node.js version. `global` aliases
+the VM's `globalThis`; it does not expose the host application's global
+object.
+
 ## Quick command reference
 
 | Command | Purpose |

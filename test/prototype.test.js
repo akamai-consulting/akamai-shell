@@ -573,6 +573,29 @@ test('exposes the real process object and a require function to JavaScript', asy
   repl.rl.close();
 });
 
+test('exposes common Node.js globals inside the VM context', async () => {
+  const output = new PassThrough();
+  const input = new PassThrough();
+  const historyPath = path.join(os.tmpdir(), `history-node-globals-${Date.now()}`);
+  const repl = createRepl(output, input, undefined, historyPath);
+  output.read();
+
+  await repl.execute('show typeof Buffer');
+  assert.equal(output.read().toString(), '"function"\n');
+  await repl.execute('show typeof setTimeout');
+  assert.equal(output.read().toString(), '"function"\n');
+  await repl.execute('show typeof fetch');
+  assert.equal(output.read().toString(), '"function"\n');
+  await repl.execute('show global === globalThis');
+  assert.equal(output.read().toString(), 'true\n');
+  await repl.execute('show await new Promise(resolve => setTimeout(() => resolve("done"), 1))');
+  assert.equal(output.read().toString(), '"done"\n');
+
+  repl.rl.close();
+  input.destroy();
+  output.destroy();
+});
+
 test('show awaits promise-backed session values', async () => {
   const output = new PassThrough();
   const input = new PassThrough();
