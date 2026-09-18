@@ -207,6 +207,19 @@ test('expands variables in non-JavaScript command input', async () => {
   await backend.shutdown();
 });
 
+test('expands JavaScript expressions in command interpolation', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":74,"type":"evaluate","source":"config.target = { groupId: \\"grp_interpolated\\" }"}\n');
+  input.write('{"id":75,"type":"command","source":"echo ${config[\\\"target\\\"][\\\"groupId\\\"]}"}\n');
+  await settle();
+  await backend.queue;
+  assert.equal(
+    messages.find((message) => message.id === 75 && message.type === 'result').result,
+    'grp_interpolated'
+  );
+  await backend.shutdown();
+});
+
 test('pipes show output through local shell commands', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":46,"type":"command","source":"show config | head -1"}\n');
@@ -545,6 +558,21 @@ test('completes shell files after escapes and pipelines', async () => {
   await backend.shutdown();
 });
 
+test('completes file paths for load and save commands', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":72,"type":"complete","source":"load src/back"}\n');
+  input.write('{"id":73,"type":"complete","source":"save src/back"}\n');
+  await settle();
+  await backend.queue;
+  for (const id of [72, 73]) {
+    assert.deepEqual(
+      messages.find((message) => message.id === id && message.type === 'result').result,
+      { candidates: ['src/backend.js'], replacement: 'src/back' }
+    );
+  }
+  await backend.shutdown();
+});
+
 test('provides OpenAPI parameter context help without changing the input', async () => {
   const registry = {
     parameterHelp: () => [
@@ -656,13 +684,14 @@ test('initializes native script module bindings and arguments', async () => {
 });
 
 test('saves and loads the new executable JavaScript state format', async (t) => {
-  const stateFile = path.join('/tmp', `akamai-shell-state-${process.pid}.js`);
+  const stateName = `.akamai-shell-state-${process.pid}.js`;
+  const stateFile = path.join(os.homedir(), stateName);
   t.after(() => fs.rmSync(stateFile, { force: true }));
   const { input, messages, backend } = harness();
   input.write('{"id":16,"type":"evaluate","source":"config = { custom: 7 }; savedValue = { answer: 42 }"}\n');
-  input.write(JSON.stringify({ id: 17, type: 'command', source: `save ${stateFile}` }) + '\n');
+  input.write(JSON.stringify({ id: 17, type: 'command', source: `save ~/${stateName}` }) + '\n');
   input.write('{"id":18,"type":"evaluate","source":"config = {}; savedValue = undefined"}\n');
-  input.write(JSON.stringify({ id: 19, type: 'command', source: `load ${stateFile}` }) + '\n');
+  input.write(JSON.stringify({ id: 19, type: 'command', source: `load ~/${stateName}` }) + '\n');
   input.write('{"id":20,"type":"evaluate","source":"config.custom + savedValue.answer"}\n');
   await settle();
   await backend.queue;

@@ -215,14 +215,15 @@ function shellCompletion(source) {
   const segment = lastPipelineSegment(source);
   const isShellEscape = segment.startsWith('!');
   const hasPipeline = segment !== source.trimStart();
-  if (!isShellEscape && !hasPipeline) return null;
   const commandSource = isShellEscape ? segment.slice(1).trimStart() : segment;
+  const isFileCommand = /^(?:load|save)\s/.test(commandSource);
+  if (!isShellEscape && !hasPipeline && !isFileCommand) return null;
   const tokenMatch = commandSource.match(/(?:^|\s)(\S*)$/);
   if (!tokenMatch) return null;
   const token = tokenMatch[1];
   const beforeToken = commandSource.slice(0, commandSource.length - token.length).trim();
   const commandPosition = !beforeToken;
-  if (commandPosition && !token.includes('/') && !token.startsWith('.')) {
+  if (!isFileCommand && commandPosition && !token.includes('/') && !token.startsWith('.')) {
     const candidates = new Set();
     for (const directory of (process.env.PATH || '').split(path.delimiter)) {
       if (!directory) continue;
@@ -609,13 +610,13 @@ class Backend {
         }).stdin?.end(input);
       });
     }
-    const expandedSource = this.expandCommandVariables(source);
+    const expandedSource = await this.expandCommandVariables(source);
     const valueMatch = source.match(/^(post|put)\s+-v\s+("|')?\$([A-Za-z_$][\w$]*)\2?(?:\s|$)/);
     let valueOverride;
     let commandSource = expandedSource;
     if (valueMatch) {
       valueOverride = globalThis[valueMatch[3]];
-      const remainder = this.expandCommandVariables(source.slice(valueMatch[0].length));
+      const remainder = await this.expandCommandVariables(source.slice(valueMatch[0].length));
       commandSource = `${valueMatch[1]} -v __akamai_json_value__ ${remainder.trimStart()}`;
     }
     const parsed = parseCommand(commandSource, valueOverride);
@@ -714,8 +715,12 @@ class Backend {
       return (await findResources(this.settings, parsed.apiPath, parsed.query, this.requestGet))
         .map((match) => ({ path: match.path, resource: match.resource }));
     }
-    if (parsed.command === 'save') return this.saveState(parsed.filePath);
-    if (parsed.command === 'load') return this.loadState(parsed.filePath);
+    if (parsed.command === 'save' || parsed.command === 'load') {
+      const filePath = parsed.filePath.startsWith('~')
+        ? path.join(os.homedir(), parsed.filePath.slice(2))
+        : parsed.filePath;
+      return parsed.command === 'save' ? this.saveState(filePath) : this.loadState(filePath);
+    }
     if (parsed.command === 'show') {
       if (parsed.name) {
         const result = await this.evaluate(parsed.name);
@@ -757,15 +762,59 @@ class Backend {
     return response.body;
   }
 
-  expandCommandVariables(source) {
-    return String(source).replace(/\$([A-Za-z_$][\w$]*)/g, (match, name) => {
+  async expandCommandVariables(source) {
+    const input = String(source);
+    let result = '';
+    for (let index = 0; index < input.length; index += 1) {
+      if (input[index] !== '$') {
+        result += input[index];
+        continue;
+      }
+      if (input[index + 1] === '{') {
+        let depth = 1;
+        let quote = '';
+        let escaped = false;
+        let close = index + 2;
+        for (; close < input.length && depth; close += 1) {
+          const character = input[close];
+          if (quote) {
+            if (escaped) escaped = false;
+            else if (character === '\\') escaped = true;
+            else if (character === quote) quote = '';
+          } else if (character === '"' || character === "'" || character === '`') {
+            quote = character;
+          } else if (character === '{') {
+            depth += 1;
+          } else if (character === '}') {
+            depth -= 1;
+          }
+        }
+        if (depth) throw new Error('Unterminated ${...} expression');
+        const expression = input.slice(index + 2, close - 1);
+        const evaluated = await this.evaluate(expression);
+        const value = evaluated.value;
+        if (value === undefined) throw new Error(`undefined expression: ${expression}`);
+        result += typeof value === 'string' ? value : JSON.stringify(value);
+        index = close - 1;
+        continue;
+      }
+      const match = input.slice(index).match(/^\$([A-Za-z_$][\w$]*)/);
+      if (!match) {
+        result += '$';
+        continue;
+      }
+      const [, name] = match;
       if (!(name in globalThis)) throw new Error(`undefined variable: ${name}`);
       const value = globalThis[name];
-      if (typeof value === 'string') return value;
-      const serialized = JSON.stringify(value);
-      if (serialized === undefined) throw new Error(`cannot expand variable: ${name}`);
-      return serialized;
-    });
+      if (typeof value === 'string') result += value;
+      else {
+        const serialized = JSON.stringify(value);
+        if (serialized === undefined) throw new Error(`cannot expand variable: ${name}`);
+        result += serialized;
+      }
+      index += match[0].length - 1;
+    }
+    return result;
   }
 
   saveState(filePath) {
