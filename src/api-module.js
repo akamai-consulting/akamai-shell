@@ -88,9 +88,11 @@ function createApiModule({
     const normalizedMethod = String(method || '').toUpperCase();
     if (!supportsPrefix(prefix, apiPath)) return false;
     const input = relativePath(prefix, apiPath);
-    const paths = normalizedMethod === 'GET' ? staticPaths :
-      Object.prototype.hasOwnProperty.call(normalizedMethodStaticPaths, normalizedMethod)
-        ? normalizedMethodStaticPaths[normalizedMethod] : staticPaths;
+    const methodPaths = normalizedMethod === 'GET'
+      ? staticPaths : normalizedMethodStaticPaths[normalizedMethod] || [];
+    const paths = normalizedMethod !== 'GET' && normalizedMethodPaths.GET?.length &&
+        !methodPaths.some((template) => templatePrefixMatches(input, template))
+      ? staticPaths : methodPaths;
     if (apiPath === '/') return paths.length > 0;
     if (prefix.startsWith(apiPath)) return true;
     if (apiPath.startsWith(`${prefix}/`)) {
@@ -167,9 +169,11 @@ function createApiModule({
 
       const input = relativePath(prefix, apiPath);
       const normalizedMethod = method.toUpperCase();
-      const pathsForCompletion = normalizedMethod === 'GET' ? staticPaths :
-        Object.prototype.hasOwnProperty.call(normalizedMethodStaticPaths, normalizedMethod)
-          ? normalizedMethodStaticPaths[normalizedMethod] : staticPaths;
+      const methodPaths = normalizedMethod === 'GET'
+        ? staticPaths : normalizedMethodStaticPaths[normalizedMethod] || [];
+      const pathsForCompletion = normalizedMethod !== 'GET' && normalizedMethodPaths.GET?.length &&
+          !methodPaths.some((template) => templatePrefixMatches(input, template))
+        ? staticPaths : methodPaths;
       const staticMatches = staticCandidates(input, pathsForCompletion)
         .filter((candidate) => !candidate.includes('{') && !candidate.includes('}'));
       const dynamic = dynamicCollectionFor(input, dynamicCollections);
