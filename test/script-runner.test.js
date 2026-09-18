@@ -57,3 +57,26 @@ test('returns a non-zero exit status when the script file cannot be read', async
   assert.equal(exitCode, 1);
   assert.match(capturedError, /Unable to read script file/);
 });
+
+test('does not create any scratch files or directories while running a script', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-script-test-scratch-'));
+  try {
+    const scriptFile = path.join(directory, 'script.sh');
+    fs.writeFileSync(scriptFile, '#!/usr/bin/env akamai-shell\nval = 123\necho $val\n');
+    const output = new PassThrough();
+    const errorOutput = new PassThrough();
+    output.resume();
+    errorOutput.resume();
+
+    await runScript(scriptFile, { output, errorOutput });
+
+    // Only the fixture directory created above should exist; the script runner
+    // itself must not create additional scratch directories or files, even
+    // when other tests concurrently create unrelated temporary directories.
+    const scriptScratchEntries = fs.readdirSync(os.tmpdir())
+      .filter((name) => name !== path.basename(directory) && /^akamai-shell-script/.test(name));
+    assert.deepEqual(scriptScratchEntries, []);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

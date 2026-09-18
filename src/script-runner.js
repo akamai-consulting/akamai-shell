@@ -1,8 +1,6 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const { PassThrough } = require('stream');
 const { createRepl } = require('./repl');
 
@@ -25,15 +23,14 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
   const lines = stripShebang(content).split('\n');
 
   // The REPL is created against throwaway streams so that its prompt and
-  // internal writes do not appear in the script's actual output, and so
-  // that history/environment persistence does not touch the real user
-  // configuration files used by interactive sessions.
+  // internal writes do not appear in the script's actual output. A null
+  // history file puts the REPL in an ephemeral, in-memory-only mode, so no
+  // scratch files or directories are created and the interactive session's
+  // real history/environment files are never read or written.
   const replInput = new PassThrough();
   const replOutput = new PassThrough();
   replOutput.resume();
-  const scratchDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'akamai-shell-script-'));
-  const historyFile = path.join(scratchDirectory, 'history');
-  const repl = createRepl(replOutput, replInput, undefined, historyFile);
+  const repl = createRepl(replOutput, replInput, undefined, null);
 
   let exitCode = 0;
   try {
@@ -53,7 +50,6 @@ async function runScript(filePath, { output = process.stdout, errorOutput = proc
     repl.rl.close();
     replInput.destroy();
     replOutput.destroy();
-    fs.rmSync(scratchDirectory, { recursive: true, force: true });
   }
   return exitCode;
 }
