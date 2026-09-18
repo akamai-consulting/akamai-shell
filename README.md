@@ -217,7 +217,17 @@ get /edge-diagnostics/v1/curl
 
 Press Tab while entering a command to complete command names, static API
 segments, query parameters, and dynamic identifiers fetched from collection
-endpoints. Failed or empty completion lookups remain silent.
+endpoints. Completion is method-aware for `get`, `post`, and `put`; write
+commands can use read-only descendants when the API metadata does not declare
+a write operation for that descendant. A collection completion inserts `/` so
+the next Tab can request dynamic IDs. Failed or empty completion lookups
+remain silent.
+
+Type `?` in an API command to display the parameters supported at that
+position. Parameter help is derived from the OpenAPI metadata, preserves the
+input buffer, and distinguishes query fields (`name==value`) from string body
+fields (`name=value`) and typed JSON body fields (`name:=value`). A literal
+question mark inside quotes is not treated as help.
 
 ## JavaScript integration
 
@@ -282,8 +292,17 @@ show matching[0]
 ```
 
 Functions are available for the current session, but external Node.js module
-loading is not exposed. Function values are not persisted as environment
-JSON.
+loading is available through the backend's `require()` function. Function
+values are not persisted as environment JSON. Add a semicolon to suppress the
+display of a JavaScript statement's result, for example `value = 123;`.
+
+The `history` command prints a numbered list and can be piped to local
+commands. `record auto` keeps the latest completed redacted request,
+`record on` keeps all requests, and `record off` disables capture. `record
+show` prints JSONL while `record show --http` prints HTTP-style traces.
+Commands beginning with `!` run through the local shell, so both `!pwd` and
+`! pwd` are valid. Ctrl+R starts reverse incremental history search; accept a
+match with the normal readline editing keys before executing it.
 
 ## Example interactive session
 

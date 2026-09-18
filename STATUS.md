@@ -2,176 +2,200 @@
 
 ## Current state
 
-- Project: `akamai-shell`, an interactive Akamai API shell with method-aware
-  JSON write support.
+- Project: `akamai-shell`, an interactive JavaScript-enabled Akamai API
+  shell for direct, generic HTTP access through EdgeGrid.
 - Active branch: `main`.
-- Latest commit: `ea12988 Add project README`.
-- `ref/akamai-apis` is a git submodule at the pinned OpenAPI source revision;
-  other supplied `ref/` directories remain unrelated embedded repositories.
-- Runtime: Node.js CommonJS with `akamai-edgegrid@4.0.4`.
+- The current implementation is on `main`; local documentation and unrelated
+  worktree artifacts may still differ from the remote branch.
+- Runtime: Node.js CommonJS; `src/main.js` is the executable entry point.
+- Current validation before documentation-only changes: 363 Node.js tests pass.
+- `ref/akamai-apis` is the checked-in OpenAPI source submodule. The other
+  supplied `ref/` directories are reference repositories and must not be
+  edited or accidentally staged.
 
-## Supported API modules
+The tracked worktree is up to date with `origin/main`. Local untracked
+reference directories and other local artifacts may be present; they are not
+project changes.
 
-- Property Manager: `/papi/v1`
-- Cloudlets v3: `/cloudlets/v3`
-- Cloudlets v2: `/cloudlets/api/v2`
-- Edge Diagnostics v1: `/edge-diagnostics/v1`
-- Edge DNS / Config DNS v2: `/config-dns/v2`
-- DataStream Config API v2: `/datastream-config-api/v2`
+## Supported API surface
 
-GET remains available for operations declared by each module's OpenAPI
-document. Edge Diagnostics v1 supports its OpenAPI-derived POST operations.
-Cloudlets v3 supports its OpenAPI-derived PUT policy and policy-version
-operations, including normalization of fetched policy-version responses into
-PUT-compatible bodies, and POST policy-version creation.
-Cloudlets v2 supports its OpenAPI-derived POST policy-version operations.
-Property Manager supports creating property versions with POST and its
-OpenAPI-derived PUT rule-tree operations. POST, PUT parsing, routing, and
-Unsupported method/path combinations fail explicitly. Activation/deactivation
-and mutation confirmation flows remain unsupported.
+API modules are discovered automatically from `src/apis/*.js`. The repository
+currently contains modules for Property Manager, Cloudlets v2/v3, Edge
+Diagnostics, Edge DNS, DataStream Config, and many additional Akamai services
+including AppSec, CCU, EdgeWorkers, EdgeKV, GTM, Identity Management, Network
+Lists, Reporting, Script Management, SIEM, SLA, Storage, Test Management, and
+others.
+
+GET operations are generally available for paths declared by each module's
+OpenAPI metadata. POST and PUT support is method- and module-specific:
+
+- Edge Diagnostics supports its declared POST operations.
+- Cloudlets v2/v3 support their declared policy and policy-version writes.
+- Property Manager supports property-version creation and declared rule-tree
+  PUT operations.
+- Other modules expose only the methods declared by their modules.
+
+Unsupported method/path combinations fail explicitly. Activation,
+deactivation, PATCH, DELETE, and broader mutation workflows remain
+unsupported unless a module explicitly declares them.
 
 ## Completed capabilities
 
-### Requests and authentication
+### Requests, configuration, and persistence
 
-- Direct HTTP request construction with EdgeGrid authentication.
-- Configurable `.edgerc` path and credential section.
-- Generic response parsing and HTTP/API error reporting.
-- Target `accountSwitchKey` propagation across API modules.
-- Shared API request target context (`accountSwitchKey`, `contractId`, and
-  `groupId`) defaults and validation, grouped under the persisted
-  `config.target` object.
-- HTTPie-style inline query parameters, with inline values overriding
-  configured defaults.
+- Direct EdgeGrid-authenticated requests through a generic transport.
+- Configurable `.edgerc` path, credential section, account switch key, and
+  target context.
+- Shared `accountSwitchKey`, `contractId`, and `groupId` defaults under
+  `config.target`, with compatibility aliases.
+- HTTPie-style request arguments: `name==value` for query parameters,
+  `name=value` for string body fields, and `name:=value` for JSON body fields.
+- `-f <file>` writes formatted GET responses or loads a POST/PUT JSON body.
+  Inline fields override fields loaded from a file.
+- `-v <expression>` supplies an initial POST/PUT object body; inline fields
+  merge over it.
+- Meaningful HTTP status, transport, authentication, and API failures are
+  preserved and reported.
+- Persistent history, environment variables, configuration, and restrictive
+  file permissions under `~/.config/akamai-shell/`. The executable
+  `startup.js` file is loaded at startup and `state.js` is loaded as persisted
+  session state when present.
+- Credential secrets and sensitive request values are redacted from output,
+  logs, and recordings.
 
-### Interactive shell
+### Interactive shell and JavaScript
 
 Supported commands include `get`, `post`, `put`, `find`, `show`, `history`,
-`echo`, `record`, `help`, `exit`, and `quit`.
+`echo`, `record`, `help`, `exit`, and `quit`, plus local shell commands with
+`!`.
 
-- Shell variables support `$name`, property, and index expansion (for example
-  `$foo["items"][0]`). API command arguments are tokenized before variable
-  expansion, so quoted JSON values remain intact in commands such as
-  `put -v "$foo" /papi/v1/...`.
-- Runtime configuration is available as the reserved `config` object from
-  JavaScript and command interpolation. The complete API request target
-  context is grouped under `config.target`. Legacy flat aliases remain
-  available for compatibility. User-defined variables remain top-level and are
-  not merged into `config`.
-- Lines that are not recognized as shell commands are evaluated as JavaScript,
-  allowing snippets such as `[1,2,3].forEach(v => console.log(v))`; shell
-  commands retain precedence. JavaScript `console.log`, `info`, `warn`, and
-  `error` write to the REPL output.
-- JavaScript can call the experimental asynchronous `$` helper with
-  `await $('get /api/path')`; it returns the decoded response body without
-  printing the nested command output. It can also capture local shell output
-  with `$(! cat file.json)`, parsing JSON when possible. JavaScript
-  expressions with a non-undefined outermost result print that value as JSON;
-  `console.log` output is not duplicated.
-- The experimental JavaScript session scope accepts trusted statements such as
-  `foo = {"items":[]}`, `foo["name"] = "value"`, and `delete foo["items"]`.
-  POST and PUT also accept `-v <expression>` to use a JSON-serializable session
-  value as the complete request body; `-v` cannot be combined with `-f`.
-- `post` and `put` accept HTTPie-like JSON body fields: `name=value` creates a
-  string and `name:=value` parses JSON. Query parameters remain available in
-  the path or as `name==value` arguments. Writes require a body and do not
-  support GET pipelines.
-- `find <api-path> -q <rule>` fetches one GET response and returns matching
-  dictionaries and resource paths. Rules support exact or substring matching
-  for field names and values; it does not recursively fetch child resources.
-- `get`, `post`, and `put` accept `-f <path>` before or after the API path.
-  GET writes formatted response JSON to the file; POST and PUT read a JSON
-  request body from the file.
-- Local shell commands can be run with `! <command>`.
-- GET and `echo` output support local shell pipelines.
-- Ctrl+R starts reverse incremental history search; repeated Ctrl+R searches
-  older matches.
-- History and environment state use persistent paths under
-  `~/.config/akamai-shell/` with restrictive permissions.
-- Credential secrets are never persisted or displayed.
-- Session tracing is controlled with `config.logLevel` and `config.logOutput`;
-  debug traces include redacted HTTP request and response details. The
-  `config` object also persists `edgerc`, `edgercSection`, account context,
-  query defaults, and `recordMode`.
-- Minimal Script Developer Mode is available with `record auto|on|off`,
-  `record show`, and `record show --http`; captures are in-memory, redacted
-  JSONL records for the current session.
+- JavaScript assignment, expressions, arrays, objects, properties, indices,
+  deletion, functions, and console methods are supported in the session.
+- `$()` uses the shared command parser and dispatcher, rather than a
+  command-specific allowlist. It can invoke API commands and ordinary shell
+  commands; commands without a meaningful result return `undefined`.
+- `$()` supports nested command pipelines and indexed/property access such as
+  `$('find ...')[0].path`.
+- String variables expand correctly in API paths without introducing literal
+  JSON quotes. For example, a path returned by `find` can be reused with
+  `get $path`.
+- Output-producing commands support local pipelines, including:
+  `record show --http | head -5`, `history | head`, and `help | less`.
+- `find` performs one collection GET and returns matching dictionaries and
+  resource paths; it does not recursively fetch child resources.
+- Ctrl+R provides reverse incremental history search.
+- A semicolon-terminated JavaScript statement suppresses its displayed result.
+- Script files support shebang execution, positional arguments through
+  `process.argv`, multi-line JavaScript statements, and non-zero failure
+  status. Interactive input remains available when no script file is supplied.
 
-### Modular completion architecture
+### Recording
 
-- API modules are discovered automatically from `src/apis/*.js`.
-- API-qualified paths are required for normal requests and completion.
-- The shared module adapter in `src/api-module.js` centralizes API prefix
-  routing, relative-path conversion, method-aware dispatch, method metadata,
-  and candidate restoration.
-- Registered modules must provide `supports`, `supportsMethod`, `get`,
-  `dispatch`, and `complete`; method-specific endpoint metadata controls
-  writes and method-aware completion.
-- Shared completion helpers centralize static matching, dynamic collection
-  lookup, response extraction, filtering, cache keys, and cached requests.
-- Dynamic descriptors use consistent names: `matches`, `collection`, `prefix`,
-  `response`, and `key`.
-- Partial dynamic identifiers only produce matching real values; descendant
-  paths appear after the identifier is complete.
-- Edge DNS combines static operation candidates with dynamic zone/proxy
-  candidates.
-- PAPI completion covers contracts, groups, properties, versions, edge
-  hostnames, CP codes, products, includes, activations, hostnames, custom
-  behaviors, and custom overrides.
-- Cloudlets v3 policy and policy-version completion is supported.
-- Edge DNS zone, proxy, and proxy-zone completion is supported.
-- DataStream group and stream identifier completion is supported.
-- OpenAPI operation metadata is loaded by `src/openapi-catalog.js`; dynamic
-  identifiers and API-specific contextual validation remain local to modules.
+- `record on` retains all redacted in-memory request records for the session.
+- `record off` disables recording.
+- `record auto` remains active and keeps exactly one record: the most recently
+  completed request, including a failed request.
+- `record show` and `record show --http` display the current buffer and can be
+  piped to local shell commands.
+- Assigning `config.recordMode` synchronizes the live recorder.
 
-## Tests and validation
+### Completion
 
-The project has 318 passing Node.js tests covering GET and write request
-construction, method routing, API-qualified completion, dynamic identifiers,
-persistence, JavaScript evaluation, token-aware variable expansion,
-pipelines, shell commands, recording, and reverse history behavior.
+- API modules are discovered independently and provide method-aware routing
+  and completion metadata.
+- Static API paths, methods, intermediate paths, and OpenAPI parameters are
+  derived from checked-in documents.
+- Dynamic identifiers such as properties, versions, edge hostnames, CP
+  codes, groups, contracts, zones, policies, streams, and other module-
+  specific values can be fetched and cached through authenticated GETs.
+- Completion lookup failures and empty candidate sets remain silent.
+- Completion works when the API path contains a variable. For example:
+  `p0 = "/papi/v1"` followed by `get $p0/prop<TAB>` preserves `$p0` in the
+  inserted candidate.
+- Operation-specific write fields are completed with the correct syntax:
+  body fields use `:=`, while query parameters use `==`. For example,
+  Property Manager version creation offers `createFromVersion:=`.
+- Parameter help resolves variable-based API paths while retaining the
+  original command text.
+- `?` contextual help works at API argument positions without changing the
+  input buffer; quoted question marks remain literal.
 
-Run:
+## Recent discussion outcomes
+
+### Shared command dispatch
+
+The project previously had separate handling for commands inside `$()`.
+That was changed experimentally and then merged into `main`: nested commands
+now use the same parser and dispatcher as top-level commands. This keeps
+variable expansion, pipelines, API routing, and error behavior consistent.
+
+### Variable expansion and completion
+
+The tokenizer originally reinserted JSON-quoted string values after
+tokenization, causing paths such as `get $pp` to become URL-encoded quotes.
+Request commands now use raw string token values. Completion separately
+resolves variables without mutating them and restores the original variable
+reference in inserted candidates.
+
+### Pipeline behavior
+
+Pipeline support was expanded beyond API responses and `echo`/`show`.
+Output-producing commands now share one pipeline path, including `help`,
+`history`, and `record show`.
+
+## Known limitations and not done
+
+- Tab completion does not cover every dynamic identifier or every contextual
+  API field; each module must declare its metadata or dynamic descriptor.
+- Query/body validation is metadata-assisted but not a complete generated
+  client type system.
+- Pagination and automatic following of API page links are not implemented.
+- Some dynamic completion lookup failures intentionally produce no candidates
+  rather than detailed diagnostics.
+- Ambiguous paths follow module precedence; there is no user-facing API
+  selection syntax.
+- PATCH, DELETE, activation, deactivation, and confirmation workflows remain
+  out of scope.
+- The JavaScript session exposes CommonJS `require`, but does not provide ES
+  module `import` syntax as a shell command.
+- Live Akamai requests require valid local EdgeGrid credentials. Credentials
+  and secret-bearing responses must never be committed.
+
+## Validation
+
+Run the complete suite with:
 
 ```bash
 npm test
+```
+
+Start the interactive shell with:
+
+```bash
 npm start
 ```
 
-## Known limitations
-
-- Static operation paths, methods, intermediate completion paths, and query
-  parameter names are derived from the checked-in `akamai-apis` OpenAPI JSON
-  documents. Dynamic completion descriptors and PAPI contextual validation
-  remain local API-module behavior.
-- Completion does not cover every dynamic identifier or every
-  operation-specific query parameter.
-- Query-parameter validation is partial rather than generated from OpenAPI
-  operation metadata.
-- Pagination and automatic following of API page links are not implemented.
-- Ambiguous GET paths use module precedence; there is no user-facing API
-  selection syntax.
-- Some completion lookup failures return no dynamic candidates rather than
-  exposing detailed lookup diagnostics.
-- External Node.js module loading through `require` or `import` is not exposed
-  to the JavaScript session.
+The current baseline is 363 passing tests. Targeted tests live under `test/`;
+new module work should include routing, method support, completion, and
+response-shape coverage without requiring live credentials.
 
 ## Important files
 
-- `src/main.js` - executable entry point.
-- `src/repl.js` - shell commands, history, variables, pipelines, persistence,
-  readline completion, and reverse search behavior.
-- `src/api-registry.js` - module discovery, routing, completion fan-out, and
-  query metadata aggregation.
+- `src/main.js` - executable CLI entry point.
+- `src/backend.js` - persistent Node.js evaluation, commands, variables,
+  pipelines, persistence, recording, and request dispatch.
+- `src/client.js` - readline input, history, completion, contextual help, and
+  communication with the backend.
+- `src/edgegrid-transport.js` - generic method-aware EdgeGrid transport.
+- `src/api-registry.js` - module discovery, routing, metadata, and completion
+  fan-out.
 - `src/api-module.js` - shared API-module adapter.
-- `src/openapi-catalog.js` - OpenAPI JSON loader and metadata extractor.
-- `src/path-completion.js` - shared path and dynamic completion helpers.
-- `src/edgegrid-transport.js` - generic method-aware EdgeGrid request and
-  response transport.
-- `src/papi-client.js` - PAPI-specific transport behavior.
-- `src/catalog.js` - PAPI OpenAPI catalog adapter and dynamic descriptors.
-- `src/apis/` - API-specific modules.
+- `src/openapi-catalog.js` - OpenAPI metadata loader.
+- `src/path-completion.js` - shared static and dynamic completion helpers.
+- `src/apis/` - independently registered API modules.
+- `src/recorder.js` - redacted in-memory request recording.
 - `test/` - unit and regression tests.
-- `README.md` - installation, command reference, JavaScript examples, and
-  interactive usage guide.
+- `README.md` - installation, command reference, and usage examples.
 - `AGENTS.md` - project requirements and design guidance.
+- `doc/skill/ttyrec-demo/SKILL.md` - guidance for creating ttyrec-based
+  animated terminal demos.

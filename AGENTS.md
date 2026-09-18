@@ -50,10 +50,12 @@ The initial command grammar should include:
   requests. With `-f`, formatted JSON output is written to the file.
   API paths include their service prefix, such as `/papi/v1/...` or
   `/cloudlets/v3/...`.
-- `post [-f <path>] <api-path> [body arguments]` and
-  `put [-f <path>] <api-path> [body arguments]` for method-qualified JSON
-  writes. Body arguments use `name=value` for strings and `name:=value` for
-  JSON values. With `-f`, the JSON body is read from the file.
+- `post [-f <path>] <api-path> [body/query arguments]` and
+  `put [-f <path>] <api-path> [body/query arguments]` for method-qualified
+  JSON writes. Body arguments use `name=value` for strings and `name:=value`
+  for JSON values; `name==value` is a query parameter. With `-f`, the JSON
+  body is read from the file and inline fields override it. With `-v`, a
+  JavaScript JSON object supplies the initial body.
 - `set <name> <value>` for global settings.
 - `show` or an equivalent command for displaying non-sensitive settings.
 - `help` and `exit`/`quit`.
@@ -85,13 +87,11 @@ configuration.
 
 ## Operation scope
 
-GET operations remain available across the registered API prefixes. The Edge
-Diagnostics module additionally supports the POST operations declared in its
-OpenAPI document. PUT is implemented by the generic parser, registry, and transport
-layers, but no currently registered module claims a PUT endpoint. Unsupported
-method/path combinations must fail explicitly; do not silently route them as
-GET requests. PATCH, DELETE, activation, and deactivation workflows remain
-unsupported.
+GET operations remain available across the registered API prefixes. Registered
+modules may additionally support the POST and PUT operations declared by their
+OpenAPI metadata. Unsupported method/path combinations must fail explicitly;
+do not silently route them as GET requests. PATCH, DELETE, activation, and
+deactivation workflows remain unsupported.
 
 Likely useful read operations include:
 
@@ -187,8 +187,8 @@ Use small modules with explicit boundaries:
   registry core code.
 - The current modules are Property Manager, Cloudlets v3, Cloudlets v2, Edge
   Diagnostics v1, and Edge DNS/Config DNS v2. Modules declare method support
-  separately from their API-prefix support; Edge Diagnostics enables its
-  OpenAPI POST paths while the other modules currently enable GET dispatch.
+  separately from their API-prefix support; modules enable the POST and PUT
+  paths declared by their OpenAPI metadata in addition to GET dispatch.
 - **PAPI transport/catalog layer:** The Property Manager module uses the
   generic transport through `src/papi-client.js` for PAPI-specific headers,
   contextual IDs, and required-parameter validation. `src/catalog.js` loads
@@ -198,6 +198,9 @@ Use small modules with explicit boundaries:
   dynamic collection lookups. Dynamic descriptors use consistent
   `matches`, `collection`, `prefix`, `response`, and `key` names; modules
   provide only API-specific catalog and response-shape details.
+- Contextual `?` help uses the same OpenAPI operation and parameter metadata as
+  completion, while preserving the input buffer and ignoring quoted literal
+  question marks.
 - **Output layer:** Formats successful JSON responses for the terminal and
   formats errors consistently while redacting sensitive headers and values.
 
