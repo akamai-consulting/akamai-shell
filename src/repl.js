@@ -810,8 +810,14 @@ function runShellCommandCapture(command, input) {
 }
 
 function createRepl(output = process.stdout, input = process.stdin, requestGet, historyFile = HISTORY_FILE) {
-  const parameterFile = historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env');
-  const environment = loadEnvironment(parameterFile);
+  // A null historyFile requests an ephemeral session (used for script execution):
+  // history and the parameter/variable environment are kept in memory only and
+  // nothing is read from or written to disk.
+  const persistent = historyFile !== null;
+  const parameterFile = !persistent
+    ? null
+    : historyFile === HISTORY_FILE ? ENV_FILE : path.join(path.dirname(historyFile), 'env');
+  const environment = parameterFile === null ? { parameters: {}, variables: {} } : loadEnvironment(parameterFile);
   const parameterDefaults = environment.parameters;
   const target = targetFromParameters(parameterDefaults);
   const settingsTarget = {
@@ -973,6 +979,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   });
 
   function persistHistory() {
+    if (!persistent) return;
     try {
       saveHistory(historyFile, rl.history);
     } catch (error) {
@@ -981,6 +988,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
   }
 
   function persistParameters() {
+    if (!persistent) return;
     try {
       saveEnvironment(parameterFile, settings.parameterDefaults, variables);
     } catch (error) {
@@ -1283,7 +1291,7 @@ function createRepl(output = process.stdout, input = process.stdin, requestGet, 
     input,
     output,
     prompt: 'akamai> ',
-    history: loadHistory(),
+    history: persistent ? loadHistory() : [],
     historySize: HISTORY_SIZE,
     removeHistoryDuplicates: true,
     completer(line, callback) {
