@@ -567,7 +567,11 @@ class Backend {
         return typeof value === 'string' ? value : JSON.stringify(value);
       }).join(' ');
     }
-    if (parsed.command === 'history') return this.history.slice(-1000);
+    if (parsed.command === 'history') {
+      return this.history.slice(-1000)
+        .map((entry, index) => `${index + 1}  ${entry}`)
+        .join('\n');
+    }
     if (parsed.command === 'record') {
       if (parsed.action === 'show') {
         if (parsed.options.length > 1 ||

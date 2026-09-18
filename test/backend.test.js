@@ -227,6 +227,17 @@ test('pipes every command result, including help and shell escapes', async () =>
   await backend.shutdown();
 });
 
+test('formats command history as a numbered list', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":64,"type":"command","source":"help"}\n');
+  input.write('{"id":65,"type":"command","source":"history"}\n');
+  await settle();
+  await backend.queue;
+  const history = messages.find((message) => message.id === 65 && message.type === 'result').result;
+  assert.match(history, /^1  help\n2  history$/);
+  await backend.shutdown();
+});
+
 test('exposes config target values to API dispatch', async () => {
   const calls = [];
   const registry = {
