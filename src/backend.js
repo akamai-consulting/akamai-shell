@@ -480,7 +480,7 @@ class Backend {
       if (['accountSwitchKey', 'contractId', 'groupId'].includes(name)) {
         this.settings.target[name] = value;
       }
-      return { [parsed.name]: value };
+      return undefined;
     }
     if (parsed.command === 'echo') {
       return parsed.words.map((word) => {

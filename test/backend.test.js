@@ -182,7 +182,10 @@ test('set and show expose the current session state', async () => {
   input.write('{"id":6,"type":"command","source":"show"}\n');
   await settle();
   await backend.queue;
-  assert.equal(messages.find((message) => message.id === 5 && message.type === 'result').result['edgerc-section'], 'staging');
+  assert.equal(Object.prototype.hasOwnProperty.call(
+    messages.find((message) => message.id === 5 && message.type === 'result'),
+    'result'
+  ), false);
   const state = messages.find((message) => message.id === 6 && message.type === 'result').result;
   assert.equal(state.config.edgercSection, 'staging');
   assert.equal(state.visibleValue, 42);
