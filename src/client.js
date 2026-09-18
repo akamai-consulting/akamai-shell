@@ -253,8 +253,10 @@ async function runInteractive(options = {}) {
     };
 
     const showContextHelp = () => {
-      const source = rl.line.slice(0, rl.cursor);
-      if (isInsideQuotes(rl.line, rl.cursor) ||
+      const rawSource = rl.line.slice(0, rl.cursor);
+      const source = rawSource.endsWith('?') ? rawSource.slice(0, -1) : rawSource;
+      const sourceCursor = rawSource.endsWith('?') ? rl.cursor - 1 : rl.cursor;
+      if (isInsideQuotes(rl.line, sourceCursor) ||
           !/^(?:get|post|put)\s+\S+/.test(source)) {
         return false;
       }
