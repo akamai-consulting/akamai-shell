@@ -395,8 +395,8 @@ test('provides OpenAPI parameter context help without changing the input', async
     messages.find((message) => message.id === 52 && message.type === 'result').result,
     [
       { name: 'contractId==', description: 'The contract identifier.' },
-      { name: 'createFromVersion:=<integer>', description: 'The version.' },
-      { name: 'createFromVersionEtag=<string>', description: 'The version ETag.' },
+      { name: 'createFromVersion:=', description: 'The version.' },
+      { name: 'createFromVersionEtag=', description: 'The version ETag.' },
       { name: 'groupId==', description: 'The group identifier.' }
     ]
   );

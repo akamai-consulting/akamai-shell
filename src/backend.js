@@ -238,11 +238,6 @@ function parameterOperator(method, parameter) {
   return parameter.schema?.type && parameter.schema.type !== 'string' ? ':=' : '=';
 }
 
-function parameterType(parameter) {
-  const type = parameter.schema?.type || parameter.type;
-  return type ? `<${type}>` : '';
-}
-
 class Backend {
   constructor(options = {}) {
     this.input = options.input || process.stdin;
@@ -789,7 +784,7 @@ class Backend {
         .split(/(?<=[.!?])\s+/)[0];
       const operator = parameterOperator(method, parameter);
       result.push({
-        name: `${parameter.name}${operator}${parameterType(parameter)}`,
+        name: `${parameter.name}${operator}`,
         description
       });
       return result;
