@@ -702,7 +702,8 @@ class Backend {
       const parameters = this.apiRegistry.parameterHelp(
         method === 'find' ? 'GET' : method.toUpperCase(), apiPath);
       const names = [...new Set(parameters.map((parameter) => parameter.name))]
-        .filter((name) => name.startsWith(partial));
+        .filter((name) => name.startsWith(partial))
+        .sort((left, right) => left.localeCompare(right));
       const prefix = partial ? source.slice(0, -partial.length) : source;
       return Promise.resolve({
         candidates: names.map((name) => `${prefix}${name}=`),
@@ -759,7 +760,7 @@ class Backend {
     const apiPath = this.expandCompletionPath(pathToken);
     const parameters = this.apiRegistry.parameterHelp(method.toUpperCase(), apiPath);
     const seen = new Set();
-    return parameters.reduce((result, parameter) => {
+    const entries = parameters.reduce((result, parameter) => {
       if (seen.has(parameter.name)) return result;
       seen.add(parameter.name);
       const description = String(parameter.description || '')
@@ -769,6 +770,7 @@ class Backend {
       result.push({ name: parameter.name, description });
       return result;
     }, []);
+    return entries.sort((left, right) => left.name.localeCompare(right.name));
   }
 
   completeVariableExpression(source) {

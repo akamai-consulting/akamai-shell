@@ -344,8 +344,8 @@ test('provides JavaScript and shell completion through the backend', async () =>
 test('provides OpenAPI parameter context help without changing the input', async () => {
   const registry = {
     parameterHelp: () => [
-      { name: 'contractId', description: 'The contract identifier. Used for filtering.' },
       { name: 'groupId', description: 'The group identifier.' },
+      { name: 'contractId', description: 'The contract identifier. Used for filtering.' },
       { name: 'contractId', description: 'Duplicate entry.' }
     ]
   };
