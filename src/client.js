@@ -194,6 +194,80 @@ async function runInteractive(options = {}) {
     }
   });
   rl.history = loadHistory(historyFile);
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    const prompt = rl.getPrompt();
+    let searching = false;
+    let searchQuery = '';
+    let searchIndex = 0;
+    let savedLine = '';
+    let savedCursor = 0;
+
+    const findHistoryMatch = () => {
+      if (!searchQuery) return null;
+      for (let index = searchIndex; index < rl.history.length; index += 1) {
+        if (rl.history[index].includes(searchQuery)) {
+          searchIndex = index;
+          return rl.history[index];
+        }
+      }
+      return null;
+    };
+
+    const refreshSearch = () => {
+      const match = findHistoryMatch();
+      rl.setPrompt(`(reverse-i-search)\`${searchQuery}': `);
+      rl.line = match || savedLine;
+      rl.cursor = match ? match.length : savedCursor;
+      rl._refreshLine();
+    };
+
+    const endSearch = (accepted) => {
+      const line = accepted ? rl.line : savedLine;
+      const cursor = accepted ? rl.cursor : savedCursor;
+      searching = false;
+      rl.setPrompt(prompt);
+      rl.line = line;
+      rl.cursor = cursor;
+      rl._refreshLine();
+    };
+
+    const ttyWrite = rl._ttyWrite.bind(rl);
+    rl._ttyWrite = (character, key) => {
+      if (!searching) {
+        if (key && key.ctrl && key.name === 'r') {
+          searching = true;
+          searchQuery = rl.line;
+          searchIndex = 0;
+          savedLine = rl.line;
+          savedCursor = rl.cursor;
+          refreshSearch();
+          return;
+        }
+        ttyWrite(character, key);
+        return;
+      }
+
+      if (key && key.ctrl && key.name === 'r') {
+        searchIndex += 1;
+        refreshSearch();
+      } else if (key && (key.name === 'return' || key.name === 'enter')) {
+        endSearch(true);
+        ttyWrite(character, key);
+      } else if (key && (key.name === 'escape' || (key.ctrl && key.name === 'g'))) {
+        endSearch(false);
+      } else if (key && key.name === 'backspace') {
+        if (searchQuery) {
+          searchQuery = searchQuery.slice(0, -1);
+          searchIndex = 0;
+          refreshSearch();
+        }
+      } else if (character && !key.ctrl && !key.meta) {
+        searchQuery += character;
+        searchIndex = 0;
+        refreshSearch();
+      }
+    };
+  }
   try {
     const initialized = backend.initialize({ workingDirectory: process.cwd() });
     let processing = Promise.resolve();
