@@ -63,59 +63,6 @@ function isPersistable(value, seen = new Set()) {
   return Object.keys(value).every((key) => isPersistable(value[key], seen));
 }
 
-function transformCommandSubstitutions(source) {
-  let result = '';
-  let quote = '';
-  let escaped = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index];
-    if (quote) {
-      result += character;
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === quote) quote = '';
-      continue;
-    }
-    if (character === '"' || character === "'" || character === '`') {
-      quote = character;
-      result += character;
-      continue;
-    }
-    if (character !== '$') {
-      result += character;
-      continue;
-    }
-    let open = index + 1;
-    while (/\s/.test(source[open] || '')) open += 1;
-    if (source[open] !== '(') {
-      result += character;
-      continue;
-    }
-    let depth = 1;
-    let innerQuote = '';
-    let innerEscaped = false;
-    let close = open + 1;
-    for (; close < source.length && depth; close += 1) {
-      const innerCharacter = source[close];
-      if (innerQuote) {
-        if (innerEscaped) innerEscaped = false;
-        else if (innerCharacter === '\\') innerEscaped = true;
-        else if (innerCharacter === innerQuote) innerQuote = '';
-      } else if (innerCharacter === '"' || innerCharacter === "'" || innerCharacter === '`') {
-        innerQuote = innerCharacter;
-      } else if (innerCharacter === '(') {
-        depth += 1;
-      } else if (innerCharacter === ')') {
-        depth -= 1;
-      }
-    }
-    if (depth) throw new Error('Unterminated JavaScript $() expression');
-    result += `(await ${source.slice(index, close)})`;
-    index = close - 1;
-  }
-  return result;
-}
-
 function words(source) {
   const result = [];
   let current = '';
@@ -342,7 +289,6 @@ class Backend {
 
   async evaluate(code, timeout) {
     if (typeof code !== 'string' || !code.trim()) return { value: undefined };
-    const transformedCode = transformCommandSubstitutions(code);
     const capture = this.captureOutput();
     try {
       const value = await new Promise((resolve, reject) => {
@@ -355,7 +301,7 @@ class Backend {
           settled = true;
           reject(new Error('Evaluation timed out'));
         }, duration);
-        this.repl.eval(`${transformedCode}\n`, this.repl.context, __filename, (error, result) => {
+        this.repl.eval(`${code}\n`, this.repl.context, __filename, (error, result) => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
