@@ -85,6 +85,23 @@ test('times out a long asynchronous evaluation and completes identifiers', async
   await backend.shutdown();
 });
 
+test('survives SIGINT while an asynchronous command is in progress', async () => {
+  const registry = {
+    get: async () => new Promise((resolve) => {
+      setTimeout(() => resolve({ statusCode: 200, body: { ok: true } }), 1000);
+    })
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write('{"id":22,"type":"command","source":"get /papi/v1/properties"}\n');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  process.kill(process.pid, 'SIGINT');
+  input.write('{"id":23,"type":"evaluate","source":"40 + 2"}\n');
+  await backend.queue;
+  assert.match(messages.find((message) => message.id === 22 && message.type === 'error').error.message, /interrupted/i);
+  assert.equal(messages.find((message) => message.id === 23 && message.type === 'result').result.value, 42);
+  await backend.shutdown();
+});
+
 test('exit emits a final done message and closes deterministically', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":9,"type":"exit"}\n');
@@ -562,12 +579,19 @@ test('completes file paths for load and save commands', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":72,"type":"complete","source":"load src/back"}\n');
   input.write('{"id":73,"type":"complete","source":"save src/back"}\n');
+  input.write('{"id":76,"type":"complete","source":"load ${process.cwd()}/src/back"}\n');
+  input.write('{"id":77,"type":"complete","source":"save ${process.cwd()}/src/back"}\n');
   await settle();
   await backend.queue;
-  for (const id of [72, 73]) {
+  for (const id of [72, 73, 76, 77]) {
     assert.deepEqual(
       messages.find((message) => message.id === id && message.type === 'result').result,
-      { candidates: ['src/backend.js'], replacement: 'src/back' }
+      id < 76
+        ? { candidates: ['src/backend.js'], replacement: 'src/back' }
+        : {
+        candidates: ['${process.cwd()}/src/backend.js'],
+        replacement: '${process.cwd()}/src/back'
+        }
     );
   }
   await backend.shutdown();

@@ -211,7 +211,7 @@ function lastPipelineSegment(source) {
   return source.slice(segmentStart).trimStart();
 }
 
-function shellCompletion(source) {
+async function shellCompletion(source, expandToken = (token) => token) {
   const segment = lastPipelineSegment(source);
   const isShellEscape = segment.startsWith('!');
   const hasPipeline = segment !== source.trimStart();
@@ -245,9 +245,10 @@ function shellCompletion(source) {
     return { candidates: [...candidates].sort(), replacement: token };
   }
 
-  const expandedToken = token.startsWith('~')
-    ? path.join(os.homedir(), token.slice(1))
-    : token;
+  const expandedInput = await expandToken(token);
+  const expandedToken = expandedInput.startsWith('~')
+    ? path.join(os.homedir(), expandedInput.slice(1))
+    : expandedInput;
   const directoryToken = expandedToken.endsWith(path.sep)
     ? expandedToken
     : path.dirname(expandedToken);
@@ -425,8 +426,15 @@ class Backend {
       output: options.replOutput || new PassThrough(),
       terminal: false,
       useGlobal: true,
+      breakEvalOnSigint: true,
       prompt: ''
     });
+    // Keep SIGINT from terminating the backend while an asynchronous command
+    // is in progress. The REPL still handles SIGINT during JavaScript eval.
+    this._onSigint = () => {
+      this.activeInterruptReject?.(new Error('Operation interrupted by SIGINT'));
+    };
+    process.on('SIGINT', this._onSigint);
     this._onData = (chunk) => {
       this.buffer += chunk.toString();
       let newline;
@@ -460,6 +468,17 @@ class Backend {
     };
   }
 
+  async interruptible(operation) {
+    const interrupt = new Promise((resolve, reject) => {
+      this.activeInterruptReject = reject;
+    });
+    try {
+      return await Promise.race([operation, interrupt]);
+    } finally {
+      this.activeInterruptReject = undefined;
+    }
+  }
+
   async handleLine(line) {
     let request;
     try {
@@ -490,7 +509,7 @@ class Backend {
           if (result.value === undefined) result = undefined;
           break;
         case 'command':
-          result = await this.command(request.source || request.code || '');
+          result = await this.interruptible(this.command(request.source || request.code || ''));
           this.write({ id, type: 'result', result });
           this.write({ id, type: 'done' });
           if (result && result.exited) await this.shutdown();
@@ -558,6 +577,7 @@ class Backend {
       : code;
     const capture = this.captureOutput();
     try {
+      process.off('SIGINT', this._onSigint);
       const value = await new Promise((resolve, reject) => {
         let settled = false;
         const configuredTimeout = Number(this.settings.timeout?.default);
@@ -589,6 +609,7 @@ class Backend {
       for (const text of capture.stderr) this.write({ type: 'stderr', data: text });
       return { value: /;\s*$/.test(code) ? undefined : value };
     } finally {
+      if (!this.closed) process.on('SIGINT', this._onSigint);
       capture.restore();
     }
   }
@@ -920,13 +941,13 @@ class Backend {
     this.initialized = true;
   }
 
-  complete(code, cursor) {
+  async complete(code, cursor) {
     this.syncSettings();
     const source = String(code || '')
       .slice(0, Number.isInteger(cursor) ? cursor : undefined)
       .trimStart();
-    const shellResult = shellCompletion(source);
-    if (shellResult) return Promise.resolve(shellResult);
+    const shellResult = await shellCompletion(source, (token) => this.expandCommandVariables(token));
+    if (shellResult) return shellResult;
     const showMatch = source.match(/^show\s+(.+)$/);
     if (showMatch) {
       const [, expression] = showMatch;
@@ -1188,6 +1209,7 @@ class Backend {
     this.closed = true;
     this.input.off('data', this._onData);
     this.input.off('end', this._onEnd);
+    process.off('SIGINT', this._onSigint);
     this.repl.close();
     if (globalThis.$ && globalThis.$.name === '') delete globalThis.$;
     if (this.standalone) {

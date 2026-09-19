@@ -132,6 +132,10 @@ class BackendClient {
     return this.request('context-help', { source }, 1000);
   }
 
+  interrupt() {
+    if (!this.closed && this.pending.size > 0) this.child.kill('SIGINT');
+  }
+
   async close() {
     if (this.closed) return;
     try {
@@ -213,6 +217,9 @@ async function runInteractive(options = {}) {
         callback(null, [result?.candidates || [], result?.replacement || line]);
       }).catch(() => callback(null, [[], line]));
     }
+  });
+  rl.on('SIGINT', () => {
+    backend.interrupt();
   });
   rl.history = loadHistory(historyFile);
   if (process.stdin.isTTY && process.stdout.isTTY) {
@@ -320,7 +327,10 @@ async function runInteractive(options = {}) {
     let requestedExit = false;
     const processLine = async (line) => {
       if (line.trim() && rl.history[0] !== line) rl.history.unshift(line);
-      if (!line.trim()) return;
+      if (!line.trim()) {
+        if (!rl.closed) rl.prompt();
+        return;
+      }
       try {
         const result = isShellLine(line)
           ? await backend.command(line)
