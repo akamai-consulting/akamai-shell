@@ -226,9 +226,10 @@ error.
 
 ## JavaScript and Node.js
 
-The backend is a persistent native Node.js CommonJS context, so JavaScript
-works similarly to a Node.js session but is not a replacement for a normal
-Node.js program.
+The shell provides a persistent Node.js CommonJS JavaScript session. It is
+trusted local code, so `require()` can expose filesystem, subprocess, and
+network capabilities. The application architecture and implementation
+boundaries are documented in [`DESIGN.md`](DESIGN.md).
 
 Available Node.js features include:
 
@@ -244,14 +245,8 @@ directory in script mode, and from the shell's current working directory in
 interactive mode. Loaded modules are runtime values and are not persisted as
 session state. The shell does not install packages automatically.
 
-Static ES module `import` syntax is not supported. It would require a separate
-ESM evaluation model that conflicts with the persistent mixed shell/JavaScript
-context. Dynamic `import()` is also not part of the supported interface.
+Static ESM `import` syntax and dynamic `import()` are not supported.
 CommonJS `require()` is the supported module-loading mechanism.
-
-The shell adds its own command parser, API transport, pipelines, completion,
-contextual help, recording, and session persistence. It is trusted local code:
-`require()` can expose filesystem, subprocess, and network capabilities.
 
 ## Command reference
 

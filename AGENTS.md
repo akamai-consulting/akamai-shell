@@ -12,6 +12,25 @@ entry point consistent with `package.json` (`src/main.js`). API-specific
 behavior must live in modules registered through `src/api-registry.js`; the
 REPL should not contain endpoint-specific request or completion logic.
 
+## Key documents and references
+
+Read these documents before making changes:
+
+- [`README.md`](README.md) - installation, user-facing commands, scripting,
+  completion, and configuration usage.
+- [`DESIGN.md`](DESIGN.md) - runtime architecture, module boundaries,
+  protocols, persistence, interruption handling, testing guidance, and future
+  directions.
+- [`STATUS.md`](STATUS.md) - current implementation status, completed
+  discussions, known limitations, and deferred work.
+- [`ref/akamai-apis/`](ref/akamai-apis/) - checked-in OpenAPI documents and
+  examples; the source of truth for API paths, methods, parameters, schemas,
+  and completion metadata.
+- [`ref/AkamaiOPEN-edgegrid-node/`](ref/AkamaiOPEN-edgegrid-node/) - reference
+  for the permitted EdgeGrid signing library and credential handling.
+- [`ref/httpie-edgegrid/`](ref/httpie-edgegrid/) - independent reference for
+  EdgeGrid configuration and generic HTTP integration.
+
 ## API access
 
 - Use the Property Manager API documented at
@@ -162,117 +181,11 @@ Do not edit the reference material as part of normal feature work.
 - Keep behavior predictable for paths, query parameters, quoting, and
   completion; avoid silently ignoring invalid input.
 
-## Design
+## Architecture and implementation details
 
-Use small modules with explicit boundaries:
-
-- **REPL layer:** Owns the readline loop, prompt, command dispatch, session
-  lifecycle, and user-facing errors.
-- **Command/parser layer:** Parses `get`, `set`, `show`, `help`, and `exit`
-  commands. It should preserve quoted values and reject unsupported methods or
-  malformed paths explicitly.
-- **Session configuration:** Stores the EdgeGrid resource-file path, credential
-  section, and any completion settings. Sensitive credential values remain in
-  the EdgeGrid library and are never copied into shell state for display.
-- **HTTP transport layer (`src/edgegrid-transport.js`):** Accepts a method, API path, query parameters, and
-  headers; resolves the configured EdgeGrid credentials; signs the request;
-  sends it through a generic HTTP client; and returns status, headers, and body.
-  This layer must not contain Property Manager-specific business logic.
-- **API modules and registry:** `ref/akamai-apis` is the static source of
-  truth for OpenAPI operation paths, methods, intermediate completion paths,
-  and query parameters. Each API module keeps only API-specific validation,
-  transport behavior, and dynamic completion descriptors locally. The
-  registry automatically loads modules from `src/apis/` and routes
-  API-qualified paths. Shared prefix matching, path conversion, static
-  completion, dynamic lookups, caching, and candidate formatting live in
-  `src/api-module.js` and `src/path-completion.js`.
-  New modules must be addable without changing REPL command parsing or
-  registry core code.
-- The current modules are Property Manager, Cloudlets v3, Cloudlets v2, Edge
-  Diagnostics v1, and Edge DNS/Config DNS v2. Modules declare method support
-  separately from their API-prefix support; modules enable the POST and PUT
-  paths declared by their OpenAPI metadata in addition to GET dispatch.
-- **PAPI transport/catalog layer:** The Property Manager module uses the
-  generic transport through `src/papi-client.js` for PAPI-specific headers,
-  contextual IDs, and required-parameter validation. `src/catalog.js` loads
-  static metadata from the PAPI OpenAPI document and retains only PAPI
-  dynamic descriptors and contextual completion behavior locally.
-- **Completion layer:** Uses shared completion helpers for static matching and
-  dynamic collection lookups. Dynamic descriptors use consistent
-  `matches`, `collection`, `prefix`, `response`, and `key` names; modules
-  provide only API-specific catalog and response-shape details.
-- Contextual `?` help uses the same OpenAPI operation and parameter metadata as
-  completion, while preserving the input buffer and ignoring quoted literal
-  question marks.
-- **Output layer:** Formats successful JSON responses for the terminal and
-  formats errors consistently while redacting sensitive headers and values.
-
-The transport and catalog boundaries should make it possible to test parsing,
-endpoint resolution, and completion without making live Akamai requests.
-Completion and command execution should share request construction so that
-they cannot silently disagree about the `/papi/v1` prefix, credential section,
-headers, or query encoding.
-
-## Implementation plan
-
-Implement the project in the following phases:
-
-1. **Establish the executable shell**
-   - Add the `src/main.js` entry point and a readline-based REPL.
-   - Implement command tokenization, dispatch, `help`, `exit`, and `quit`.
-   - Define a session configuration object with safe defaults and validation.
-
-2. **Implement configuration commands**
-   - Implement `set edgerc <path>` and `set edgercSection <section>`.
-   - Expand `~` only for local file paths, and keep the configured path
-     displayable without reading or printing secret contents.
-   - Implement `show` for non-sensitive configuration values.
-
-3. **Implement authenticated GET requests**
-   - Add an approved EdgeGrid authentication dependency if needed.
-   - Add a generic HTTP transport that reads the configured `.edgerc`, signs
-     requests, sends GET requests, parses response bodies, and preserves
-     status information.
-   - Implement `get <path>` with API path validation, query-string handling,
-     readable JSON output, and explicit transport/authentication/API errors.
-   - Ensure the PAPI base path and required headers are applied according to
-     the API definition.
-
-4. **Implement method-qualified JSON writes**
-   - Parse `post` and `put` commands with HTTPie-style JSON body arguments.
-   - Route only to modules that declare the requested method and path.
-   - Preserve EdgeGrid signing, query/default/account-switch-key handling,
-     response status, headers, and body parsing.
-
-5. **Build API metadata and static completion**
-   - Load the service OpenAPI JSON from `ref/akamai-apis/apis/<service>/`.
-   - Resolve local references and create endpoint catalogs for HTTP methods,
-     operation paths, intermediate completion paths, and query parameters.
-   - Add completion for command names, static path segments, and supported
-     parameter positions.
-
-6. **Add dynamic completion**
-   - Identify the collection endpoint needed for the currently incomplete
-     path, such as `GET /edgehostnames` for
-     `/edgehostnames/<partial-value>`.
-   - Call that endpoint through the same authenticated transport used by
-     `get`.
-   - Extract identifiers from known PAPI collection response shapes and
-     filter them by the partial token.
-   - Cache successful candidates for the current REPL session where useful;
-     report lookup failures clearly and fall back to static completion when
-     possible.
-
-7. **Harden and document the sample**
-   - Test command parsing, settings, path validation, endpoint resolution,
-     response parsing, redaction, and completion with mocked transport data.
-   - Exercise at least one live read manually only when valid local credentials
-     are available; never add those credentials or responses containing secrets
-     to the repository.
-   - Document installation, startup, `.edgerc` setup, supported commands,
-     completion behavior, and the currently declared write-method limitations.
-
-Do not broaden the implementation beyond declared API metadata, generic
-method-aware transport, and JSON write commands. Any activation workflow or
-other mutation should first update this document and define corresponding
-safety and confirmation requirements.
+The current module boundaries, message protocol, evaluation model, API
+registration rules, completion design, persistence behavior, interruption
+handling, and extension/testing guidance are maintained in `DESIGN.md`.
+Read that document before changing architecture or adding cross-cutting
+behavior. Keep this file focused on repository-wide constraints and safety
+requirements rather than duplicating implementation plans.
