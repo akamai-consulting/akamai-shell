@@ -84,7 +84,12 @@ async function requestMethod(settings, apiPath, method, query = {}, body,
   try {
     response = await send(clientFactory(settings), request);
   } catch (error) {
-    settings.recorder?.complete(recording, undefined, error);
+    const errorResponse = error.response ? {
+      statusCode: error.response.status,
+      headers: error.response.headers,
+      body: error.response.data
+    } : undefined;
+    settings.recorder?.complete(recording, errorResponse, error);
     settings.logger?.error('HTTP request failed', {
       method: normalizedMethod,
       path: request.path,

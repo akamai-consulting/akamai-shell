@@ -59,3 +59,28 @@ test('renders captured records as HTTP-style messages', () => {
   assert.match(output, /HTTP\/1\.1 201/);
   assert.match(output, /"name":"demo"/);
 });
+
+test('renders HTTP error responses instead of an empty status', () => {
+  const recorder = createRecorder();
+  recorder.setMode('on');
+  const entry = recorder.begin({
+    method: 'PUT',
+    path: '/cloudlets/api/v2/policies/371982/versions/4',
+    headers: { Accept: 'application/json' },
+    qs: {}
+  });
+  recorder.complete(entry, {
+    statusCode: 400,
+    headers: { 'content-type': 'application/problem+json' },
+    body: { title: 'Invalid request' }
+  }, {
+    statusCode: 400,
+    message: 'Request failed',
+    body: { title: 'Invalid request' }
+  });
+
+  const output = recorder.http();
+  assert.match(output, /HTTP\/1\.1 400/);
+  assert.match(output, /content-type: application\/problem\+json/);
+  assert.match(output, /"title":"Invalid request"/);
+});

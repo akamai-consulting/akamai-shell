@@ -8,7 +8,7 @@ const { spawn } = require('node:child_process');
 const { isStatementComplete } = require('./statement-completion');
 
 const SHELL_COMMAND_PATTERN =
-  /^(?:!.*|get|post|put|find|show|set|echo|record|history|save|load|help|\?|exit|quit)(?:\s|$)/;
+  /^(?:!.*|get|post|put|find|show|set|echo|record|history|save|load|version|help|\?|exit|quit)(?:\s|$)/;
 const HISTORY_SIZE = 1000;
 
 function formatResult(value) {
@@ -45,10 +45,14 @@ class BackendClient {
     this.pending = new Map();
     this.buffer = '';
     this.closed = false;
+    this.exitCode = undefined;
+    this.exitSignal = undefined;
     this.output = options.output || process.stdout;
     this.child.stdout.on('data', (chunk) => this.handleData(chunk));
     this.child.on('error', (error) => this.failPending(error));
     this.child.on('exit', (code, signal) => {
+      this.exitCode = code;
+      this.exitSignal = signal;
       this.failPending(new Error(`Backend exited (${signal || code})`));
       this.closed = true;
     });
@@ -171,6 +175,11 @@ async function runScript(filePath, scriptArgs = [], options = {}) {
   const backend = options.backend || new BackendClient(options);
   const output = options.output || process.stdout;
   let pending = '';
+  const showEvaluationResult = async (result) => {
+    if (result === undefined) return;
+    const verbose = await backend.evaluate('Boolean(config.verbose)');
+    if (verbose) output.write(formatResult(result));
+  };
   try {
     await backend.initialize({
       scriptPath: absolutePath,
@@ -188,12 +197,13 @@ async function runScript(filePath, scriptArgs = [], options = {}) {
       pending = pending ? `${pending}\n${line}` : line;
       if (!isStatementComplete(pending)) continue;
       const result = await backend.evaluate(pending);
-      if (result !== undefined) output.write(formatResult(result));
+      await showEvaluationResult(result);
       pending = '';
     }
     if (pending.trim()) throw new Error('Unexpected end of script inside an unterminated statement');
     return 0;
   } catch (error) {
+    if (backend.closed && backend.exitCode === 0) return 0;
     (options.errorOutput || process.stderr).write(`Error: ${error.message}\n`);
     return 1;
   } finally {
@@ -341,18 +351,27 @@ async function runInteractive(options = {}) {
           rl.close();
         }
       } catch (error) {
-        errorOutput.write(`${error.name}: ${error.message}\n`);
+        if (!(backend.closed && backend.exitCode === 0)) {
+          errorOutput.write(`${error.name}: ${error.message}\n`);
+        }
       }
       if (!rl.closed && !requestedExit) rl.prompt();
     };
+    backend.child.once('exit', () => {
+      if (!rl.closed) rl.close();
+    });
     const closed = new Promise((resolve) => rl.once('close', resolve));
     rl.on('line', (line) => {
       processing = processing.then(() => initialized).then(() => processLine(line));
     });
-    await initialized;
-    if (!rl.closed) rl.prompt();
-    await closed;
-    await processing;
+    try {
+      await initialized;
+      if (!rl.closed) rl.prompt();
+      await closed;
+      await processing;
+    } catch (error) {
+      if (!(backend.closed && backend.exitCode === 0)) throw error;
+    }
   } finally {
     saveHistory(historyFile, rl.history);
     rl.close();

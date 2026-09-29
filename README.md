@@ -112,6 +112,10 @@ variables, pipelines, request options, and error handling as interactive use.
 They do not automatically save changes made during execution; use `save` when
 a script needs to write state.
 
+In non-interactive script mode, JavaScript evaluation results are suppressed by
+default. Set `config.verbose = true` in the script to display them; explicit
+`console.log()` output and shell-command output are always displayed.
+
 ## Configuration and session state
 
 There are three related kinds of state:
@@ -259,7 +263,7 @@ CommonJS `require()` is the supported module-loading mechanism.
 | `post <api-path> [arguments ...]` | Authenticated JSON POST. |
 | `put <api-path> [arguments ...]` | Authenticated JSON PUT. |
 | `post or put -f <file> <api-path> ...` | Load an object body from `<file>`; inline fields override file fields. |
-| `post or put -v <expression> <api-path> ...` | Use a JavaScript object as the initial body; inline fields merge over it. |
+| `post or put -v <expression> <api-path> ...` | Use any JavaScript value as the JSON body; inline fields merge over an object value. |
 | `find <api-path> -q <rule>` | Fetch one collection response and find matching dictionaries locally. |
 
 HTTPie-style arguments use these operators:
@@ -300,6 +304,7 @@ get /edge-diagnostics/v1/curl
 | `record show [--http]` | Display captured JSONL or HTTP-style records. |
 | `save [file]` | Save persistable session variables, functions, and configuration as JavaScript. |
 | `load [file]` | Evaluate a state file in the current session. |
+| `version` | Show the package version and the git commit hash of the running code. |
 | `help` or `?` | Display built-in command help. |
 | `exit` or `quit` | Leave the shell. |
 

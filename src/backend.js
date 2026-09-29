@@ -5,16 +5,34 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
-const { exec } = require('node:child_process');
+const { exec, execFileSync } = require('node:child_process');
 const { PassThrough } = require('node:stream');
 const apiRegistry = require('./api-registry');
 const { sortCandidates } = require('./path-completion');
 const { findResources } = require('./find');
 const { createRecorder } = require('./recorder');
 
+const packageInfo = require('../package.json');
+
 const DEFAULT_TIMEOUT = 10000;
 const DEFAULT_STATE_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'state.js');
 const DEFAULT_STARTUP_FILE = path.join(os.homedir(), '.config', 'akamai-shell', 'startup.js');
+
+function gitCommitHash() {
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).toString().trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function versionText() {
+  return `akamai-shell ${packageInfo.version} (${gitCommitHash()})`;
+}
+
 const HELP_TEXT = `Commands:
 ========
 Requests:
@@ -22,7 +40,7 @@ Requests:
   get -f <file> <api-path>             Save formatted GET JSON
   post <api-path> [body ...]           POST a JSON body
   put <api-path> [body ...]            PUT a JSON body
-  post|put -v <expression> <api-path>  Use a JavaScript value as the body
+  post|put -v <expression> <api-path>  Use a JavaScript value as the JSON body
   post|put -f <file> <api-path>        Read the JSON body from a file
 
   Query fields use name==value.
@@ -43,6 +61,7 @@ Session:
   history                              Show command history
   save [file]                          Save executable JavaScript state
   load [file]                          Load executable JavaScript state
+  version                              Show the version and git commit hash
   help, ?                              Show this help
   exit, quit                           Exit the shell
 
@@ -271,6 +290,63 @@ async function shellCompletion(source, expandToken = (token) => token) {
   return { candidates, replacement: token };
 }
 
+// Given input with input[index] === '$' and input[index + 1] === '{', scans a balanced
+// ${...} expression (respecting nested braces and quoted strings) and returns the inner
+// expression text along with the index just past the closing '}'.
+function findBraceExpression(input, index) {
+  let depth = 1;
+  let quote = '';
+  let escaped = false;
+  let close = index + 2;
+  for (; close < input.length && depth; close += 1) {
+    const character = input[close];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === quote) quote = '';
+    } else if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+    } else if (character === '{') {
+      depth += 1;
+    } else if (character === '}') {
+      depth -= 1;
+    }
+  }
+  if (depth) throw new Error('Unterminated ${...} expression');
+  return { expression: input.slice(index + 2, close - 1), end: close };
+}
+
+// Recognizes a -v value token that is exactly a variable reference ($name or ${expression}),
+// optionally wrapped in a single matching quote, starting at `start` within `source`. Quoting
+// the reference lets it be surrounded by JSON-unsafe text without confusing the tokenizer,
+// since the reference is substituted by direct evaluation rather than spliced-in JSON text.
+// Returns null when the token at `start` is not (only) such a reference.
+function findValueExpression(source, start) {
+  const input = String(source);
+  const quote = (input[start] === '"' || input[start] === "'") ? input[start] : '';
+  const dollarIndex = start + (quote ? 1 : 0);
+  if (input[dollarIndex] !== '$') return null;
+  let expression;
+  let bareName;
+  let end;
+  if (input[dollarIndex + 1] === '{') {
+    const brace = findBraceExpression(input, dollarIndex);
+    expression = brace.expression;
+    end = brace.end;
+  } else {
+    const match = input.slice(dollarIndex).match(/^\$([A-Za-z_$][\w$]*)/);
+    if (!match) return null;
+    bareName = match[1];
+    end = dollarIndex + match[0].length;
+  }
+  if (quote) {
+    if (input[end] !== quote) return null;
+    end += 1;
+  }
+  if (end < input.length && !/\s/.test(input[end])) return null;
+  return { expression, bareName, end };
+}
+
 function words(source) {
   const result = [];
   let current = '';
@@ -307,8 +383,9 @@ function parseCommand(source, valueOverride) {
     return { command, source: tokens.join(' ') };
   }
   if (!['get', 'post', 'put', 'find', 'show', 'echo', 'history', 'record',
-    'set', 'save', 'load', 'help', '?', 'exit', 'quit'].includes(command)) return null;
-  if (command === '?' || command === 'help' || command === 'exit' || command === 'quit') {
+    'set', 'save', 'load', 'version', 'help', '?', 'exit', 'quit'].includes(command)) return null;
+  if (command === '?' || command === 'help' || command === 'version' ||
+      command === 'exit' || command === 'quit') {
     if (tokens.length) throw new Error(`${command} does not accept arguments`);
     return { command };
   }
@@ -361,9 +438,8 @@ function parseCommand(source, valueOverride) {
   const [apiPath, queryString] = rawPath.split('?', 2);
   const query = Object.fromEntries(new URLSearchParams(queryString || ''));
   const body = value === undefined ? {} : value;
-  if (value !== undefined &&
-      (!body || typeof body !== 'object' || Array.isArray(body))) {
-    throw new Error('-v requires a JSON object value');
+  if (value !== undefined && body === undefined) {
+    throw new Error('-v requires a JSON value');
   }
   for (const token of tokens) {
     const match = token.match(/^([^:=]+)(==|:=|=)(.*)$/);
@@ -374,10 +450,18 @@ function parseCommand(source, valueOverride) {
       throw new Error(`GET query argument "${token}" must use name==value`);
     }
     else if (operator === ':=') {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw new Error('Inline body arguments require -v to contain a JSON object');
+      }
       try { body[name] = JSON.parse(value); } catch (error) {
         throw new Error(`Invalid JSON value for ${name}: ${error.message}`);
       }
-    } else body[name] = value;
+    } else {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw new Error('Inline body arguments require -v to contain a JSON object');
+      }
+      body[name] = value;
+    }
   }
   return { command, apiPath, query, body, filePath };
 }
@@ -537,26 +621,31 @@ class Backend {
     }
   }
 
-  captureOutput() {
+  captureOutput(onOutput) {
     const stdout = [];
     const stderr = [];
     const originalConsole = global.console;
     const originalStdoutWrite = process.stdout.write;
     const originalStderrWrite = process.stderr.write;
     const render = (values) => `${values.map(asText).join(' ')}\n`;
+    const capture = (type, target, chunk) => {
+      const text = chunk.toString();
+      target.push(text);
+      onOutput?.(type, text);
+    };
     global.console = {
       ...originalConsole,
-      log: (...values) => stdout.push(render(values)),
-      info: (...values) => stdout.push(render(values)),
-      warn: (...values) => stderr.push(render(values)),
-      error: (...values) => stderr.push(render(values))
+      log: (...values) => capture('stdout', stdout, render(values)),
+      info: (...values) => capture('stdout', stdout, render(values)),
+      warn: (...values) => capture('stderr', stderr, render(values)),
+      error: (...values) => capture('stderr', stderr, render(values))
     };
     process.stdout.write = (chunk) => {
-      stdout.push(chunk.toString());
+      capture('stdout', stdout, chunk);
       return true;
     };
     process.stderr.write = (chunk) => {
-      stderr.push(chunk.toString());
+      capture('stderr', stderr, chunk);
       return true;
     };
     return {
@@ -575,7 +664,7 @@ class Backend {
     const evaluatedCode = this.mode === 'interactive'
       ? transformCommandSubstitutions(code)
       : code;
-    const capture = this.captureOutput();
+    const capture = this.captureOutput((type, data) => this.write({ type, data }));
     try {
       process.off('SIGINT', this._onSigint);
       const value = await new Promise((resolve, reject) => {
@@ -605,8 +694,6 @@ class Backend {
         }
       });
 
-      for (const text of capture.stdout) this.write({ type: 'stdout', data: text });
-      for (const text of capture.stderr) this.write({ type: 'stderr', data: text });
       return { value: /;\s*$/.test(code) ? undefined : value };
     } finally {
       if (!this.closed) process.on('SIGINT', this._onSigint);
@@ -622,29 +709,46 @@ class Backend {
         ? ''
         : (typeof result === 'string' ? result : `${JSON.stringify(result, null, 2)}\n`);
       return new Promise((resolve, reject) => {
-        exec(pipeline.right, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+        let settled = false;
+        const child = exec(pipeline.right, { maxBuffer: 1024 * 1024 },
+          (error, stdout, stderr) => {
+          if (settled) return;
+          settled = true;
           if (error) {
             reject(new Error(`Pipeline command failed: ${stderr.trim() || error.message}`));
             return;
           }
           resolve(stdout);
-        }).stdin?.end(input);
+        });
+        child.stdin?.on('error', (error) => {
+          if (error.code === 'EPIPE' || settled) return;
+          settled = true;
+          reject(new Error(`Pipeline input failed: ${error.message}`, { cause: error }));
+        });
+        child.stdin?.end(input);
       });
     }
-    const expandedSource = await this.expandCommandVariables(source);
-    const valueMatch = source.match(/^(post|put)\s+-v\s+("|')?\$([A-Za-z_$][\w$]*)\2?(?:\s|$)/);
     let valueOverride;
-    let commandSource = expandedSource;
-    if (valueMatch) {
-      valueOverride = globalThis[valueMatch[3]];
-      const remainder = await this.expandCommandVariables(source.slice(valueMatch[0].length));
-      commandSource = `${valueMatch[1]} -v __akamai_json_value__ ${remainder.trimStart()}`;
+    let commandSource;
+    const valuePrefixMatch = String(source).match(/^(post|put)\s+-v\s+/i);
+    const rawValueSpan = valuePrefixMatch && findValueExpression(source, valuePrefixMatch[0].length);
+    if (rawValueSpan) {
+      valueOverride = rawValueSpan.bareName !== undefined
+        ? globalThis[rawValueSpan.bareName]
+        : (await this.evaluate(rawValueSpan.expression)).value;
+      const remainder = await this.expandCommandVariables(source.slice(rawValueSpan.end));
+      commandSource = `${valuePrefixMatch[1]} -v __akamai_json_value__ ${remainder.trimStart()}`;
+    } else {
+      commandSource = await this.expandCommandVariables(source);
     }
     const parsed = parseCommand(commandSource, valueOverride);
     if (!parsed) return (await this.evaluate(source)).value;
     this.syncSettings();
     if (parsed.command === '?' || parsed.command === 'help') {
       return HELP_TEXT;
+    }
+    if (parsed.command === 'version') {
+      return versionText();
     }
 
     if (parsed.command === 'exit' || parsed.command === 'quit') return { exited: true };
@@ -792,31 +896,12 @@ class Backend {
         continue;
       }
       if (input[index + 1] === '{') {
-        let depth = 1;
-        let quote = '';
-        let escaped = false;
-        let close = index + 2;
-        for (; close < input.length && depth; close += 1) {
-          const character = input[close];
-          if (quote) {
-            if (escaped) escaped = false;
-            else if (character === '\\') escaped = true;
-            else if (character === quote) quote = '';
-          } else if (character === '"' || character === "'" || character === '`') {
-            quote = character;
-          } else if (character === '{') {
-            depth += 1;
-          } else if (character === '}') {
-            depth -= 1;
-          }
-        }
-        if (depth) throw new Error('Unterminated ${...} expression');
-        const expression = input.slice(index + 2, close - 1);
-        const evaluated = await this.evaluate(expression);
+        const brace = findBraceExpression(input, index);
+        const evaluated = await this.evaluate(brace.expression);
         const value = evaluated.value;
-        if (value === undefined) throw new Error(`undefined expression: ${expression}`);
+        if (value === undefined) throw new Error(`undefined expression: ${brace.expression}`);
         result += typeof value === 'string' ? value : JSON.stringify(value);
-        index = close - 1;
+        index = brace.end - 1;
         continue;
       }
       const match = input.slice(index).match(/^\$([A-Za-z_$][\w$]*)/);
@@ -1070,7 +1155,7 @@ class Backend {
       });
     }
     const shellCommands = ['get', 'post', 'put', 'find', 'show', 'set', 'echo', 'history',
-      'record', 'save', 'load', 'help', 'exit', 'quit'];
+      'record', 'save', 'load', 'version', 'help', 'exit', 'quit'];
     if (/^[A-Za-z_$][\w$]*$/.test(source)) {
       return new Promise((resolve, reject) => {
         this.repl.complete(source, (error, result) => {

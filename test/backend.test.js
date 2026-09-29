@@ -185,6 +185,10 @@ test('writes GET output and merges JSON files into write bodies', async () => {
   input.write('{"id":62,"type":"evaluate","source":"payload = { nested: [1, 2], enabled: true }"}\n');
   input.write('{"id":63,"type":"evaluate","source":"pp = \\"/papi/v1/properties/prp_526230\\""}\n');
   input.write('{"id":64,"type":"command","source":"put -v \\"$payload\\" $pp/versions/80/rules extra=value"}\n');
+  input.write('{"id":65,"type":"evaluate","source":"matchRules = [{ type: \\"igMatchRule\\", id: 0 }]"}\n');
+  input.write('{"id":66,"type":"command","source":"put -v \\"$matchRules\\" $pp/versions/81/rules"}\n');
+  input.write('{"id":67,"type":"evaluate","source":"message = \\"valid JSON string\\""}\n');
+  input.write('{"id":68,"type":"command","source":"put -v \\"$message\\" $pp/versions/82/rules"}\n');
   await settle();
   await backend.queue;
   assert.equal(messages.find((message) => message.id === 60 && message.type === 'result').result, undefined);
@@ -200,6 +204,18 @@ test('writes GET output and merges JSON files into write bodies', async () => {
     apiPath: '/papi/v1/properties/prp_526230/versions/80/rules',
     query: {},
     body: { nested: [1, 2], enabled: true, extra: 'value' }
+  });
+  assert.deepEqual(calls[2], {
+    method: 'PUT',
+    apiPath: '/papi/v1/properties/prp_526230/versions/81/rules',
+    query: {},
+    body: [{ type: 'igMatchRule', id: 0 }]
+  });
+  assert.deepEqual(calls[3], {
+    method: 'PUT',
+    apiPath: '/papi/v1/properties/prp_526230/versions/82/rules',
+    query: {},
+    body: 'valid JSON string'
   });
   fs.unlinkSync(outputFile);
   fs.unlinkSync(bodyFile);
@@ -247,6 +263,19 @@ test('pipes show output through local shell commands', async () => {
   await backend.shutdown();
 });
 
+test('does not abort when a pipeline consumer closes early', async () => {
+  const { input, messages, backend } = harness();
+  input.write('{"id":50,"type":"evaluate","source":"large = Array.from({ length: 100000 }, (_, index) => index)"}\n');
+  input.write('{"id":51,"type":"command","source":"show large | head -1"}\n');
+  await settle();
+  await backend.queue;
+  const result = messages.find((message) => message.id === 51 && message.type === 'result');
+  assert.ok(result);
+  assert.match(result.result, /^\[/);
+  assert.equal(messages.some((message) => message.type === 'error'), false);
+  await backend.shutdown();
+});
+
 test('evaluates structured expressions passed to show', async () => {
   const { input, messages, backend } = harness();
   input.write('{"id":49,"type":"command","source":"show config[\\"target\\"]"}\n');
@@ -278,6 +307,20 @@ test('formats command history as a numbered list', async () => {
   await backend.queue;
   const history = messages.find((message) => message.id === 65 && message.type === 'result').result;
   assert.match(history, /^1  help\n2  history$/);
+  await backend.shutdown();
+});
+
+test('reports the package version and git commit hash', async () => {
+  const packageInfo = require('../package.json');
+  const { input, messages, backend } = harness();
+  input.write('{"id":90,"type":"command","source":"version"}\n');
+  input.write('{"id":91,"type":"command","source":"version extra"}\n');
+  await settle();
+  await backend.queue;
+  const version = messages.find((message) => message.id === 90 && message.type === 'result').result;
+  assert.match(version, new RegExp(`^akamai-shell ${packageInfo.version} \\((?:[0-9a-f]{4,40}|unknown)\\)$`));
+  const error = messages.find((message) => message.id === 91 && message.type === 'error');
+  assert.match(error.error.message, /version does not accept arguments/);
   await backend.shutdown();
 });
 
