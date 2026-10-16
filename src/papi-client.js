@@ -48,7 +48,8 @@ function validateRequiredParameters(apiPath, query) {
   }
 }
 
-async function get(settings, apiPath, query = {}, clientFactory = transport.createClient) {
+async function get(settings, apiPath, query = {}, clientFactory = transport.createClient,
+  headerOverrides) {
   const normalizedPath = transport.normalizePath(apiPath);
   const qs = defaultQuery(settings, normalizedPath, 'GET', query);
   const target = settings.target || settings;
@@ -70,11 +71,11 @@ async function get(settings, apiPath, query = {}, clientFactory = transport.crea
   }, normalizedPath, qs, clientFactory, PAPI_PREFIX, {
     Accept: 'application/json',
     'PAPI-Use-Prefixes': 'true'
-  });
+  }, headerOverrides);
 }
 
 async function requestMethod(settings, apiPath, method, query = {}, body,
-  clientFactory = transport.createClient) {
+  clientFactory = transport.createClient, headerOverrides) {
   const normalizedPath = transport.normalizePath(apiPath);
   const qs = defaultQuery(settings, normalizedPath, method, query);
   const target = settings.target || settings;
@@ -95,7 +96,7 @@ async function requestMethod(settings, apiPath, method, query = {}, body,
     PAPI_PREFIX, {
       Accept: 'application/json',
       'PAPI-Use-Prefixes': 'true'
-    });
+    }, headerOverrides);
 }
 
 module.exports = {

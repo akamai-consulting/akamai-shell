@@ -28,6 +28,29 @@ test('applies accountSwitchKey and parameter defaults to generic API requests', 
   });
 });
 
+test('merges custom headers case-insensitively with transport defaults', async () => {
+  let sent;
+  await requestMethod({
+    edgerc: '/tmp/test-edgerc',
+    edgercSection: 'cps'
+  }, '/enrollments', 'GET', {}, undefined, () => ({
+    auth(value) {
+      sent = value;
+      return this;
+    },
+    send(callback) {
+      callback(null, { status: 200, headers: {} }, '{}');
+    }
+  }), '/cps/v2', { Accept: 'application/json', 'X-Default': 'keep' }, {
+    accept: 'application/vnd.akamai.cps.enrollments.v11+json'
+  });
+
+  assert.deepEqual(sent.headers, {
+    Accept: 'application/vnd.akamai.cps.enrollments.v11+json',
+    'X-Default': 'keep'
+  });
+});
+
 test('constructs signed arbitrary-method JSON requests with response metadata', async () => {
   let sent;
   const response = await requestMethod({

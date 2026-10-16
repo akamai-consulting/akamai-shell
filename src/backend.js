@@ -36,15 +36,15 @@ function versionText() {
 const HELP_TEXT = `Commands:
 ========
 Requests:
-  get <api-path> [name==value ...]     GET a resource
+  get <api-path> [arguments ...]       GET a resource
   get -f <file> <api-path>             Save formatted GET JSON
-  post <api-path> [body ...]           POST a JSON body
-  put <api-path> [body ...]            PUT a JSON body
+  post|put <api-path> [arguments ...]  Send a JSON body
   post|put -v <expression> <api-path>  Use a JavaScript value as the JSON body
   post|put -f <file> <api-path>        Read the JSON body from a file
 
   Query fields use name==value.
   Body fields use name=value (string) or name:=value (JSON).
+  HTTP headers use Name:Value or 'Name: Value' on get, post, and put.
 
 Data and shell:
   find <api-path> -q <rule>            Find matching dictionaries in one GET
@@ -438,10 +438,20 @@ function parseCommand(source, valueOverride) {
   const [apiPath, queryString] = rawPath.split('?', 2);
   const query = Object.fromEntries(new URLSearchParams(queryString || ''));
   const body = value === undefined ? {} : value;
+  const headers = {};
   if (value !== undefined && body === undefined) {
     throw new Error('-v requires a JSON value');
   }
   for (const token of tokens) {
+    const headerMatch = token.match(/^([!#$%&'*+\-.^_`|~0-9A-Za-z]+):(?![=])\s*([\s\S]*)$/);
+    if (headerMatch) {
+      const [, name, headerValue] = headerMatch;
+      if (/[\r\n]/.test(headerValue)) {
+        throw new Error(`Invalid HTTP header value for "${name}"`);
+      }
+      headers[name] = headerValue;
+      continue;
+    }
     const match = token.match(/^([^:=]+)(==|:=|=)(.*)$/);
     if (!match) throw new Error(`Invalid ${command} argument "${token}"`);
     const [, name, operator, value] = match;
@@ -463,7 +473,7 @@ function parseCommand(source, valueOverride) {
       body[name] = value;
     }
   }
-  return { command, apiPath, query, body, filePath };
+  return { command, apiPath, query, body, headers, filePath };
 }
 
 function parameterOperator(method, parameter) {
@@ -871,8 +881,11 @@ class Backend {
       parsed.body = { ...fileBody, ...parsed.body };
     }
     const response = method === 'GET'
-      ? await this.apiRegistry.get(this.settings, parsed.apiPath, parsed.query, this.requestGet)
-      : await this.apiRegistry.dispatch(method, this.settings, parsed.apiPath, parsed.query, parsed.body, this.requestGet);
+      ? await this.apiRegistry.get(
+        this.settings, parsed.apiPath, parsed.query, this.requestGet, parsed.headers)
+      : await this.apiRegistry.dispatch(
+        method, this.settings, parsed.apiPath, parsed.query, parsed.body,
+        this.requestGet, parsed.headers);
     if (parsed.filePath && method === 'GET') {
       const filePath = parsed.filePath.startsWith('~')
         ? path.join(os.homedir(), parsed.filePath.slice(2))

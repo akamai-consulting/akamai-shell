@@ -34,6 +34,22 @@ test('gets contracts through the PAPI endpoint', async () => {
   assert.equal(requests[0].headers['PAPI-Use-Prefixes'], 'true');
 });
 
+test('overrides PAPI headers without dropping other API-specific defaults', async () => {
+  const requests = [];
+  await get(
+    { edgerc: '/tmp/test-edgerc', edgercSection: 'papi' },
+    '/contracts',
+    {},
+    fakeClientFactory(requests, { contracts: { items: [] } }),
+    { accept: 'application/vnd.akamai.papi.contracts.v1+json' }
+  );
+
+  assert.deepEqual(requests[0].headers, {
+    Accept: 'application/vnd.akamai.papi.contracts.v1+json',
+    'PAPI-Use-Prefixes': 'true'
+  });
+});
+
 test('puts a property version rule tree through PAPI', async () => {
   const requests = [];
   const rules = { behaviors: [], children: [] };

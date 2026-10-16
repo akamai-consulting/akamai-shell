@@ -141,6 +141,7 @@ Do not modify REPL parsing or registry core logic for a normal new API.
 - validates API paths and HTTP methods;
 - loads the configured EdgeGrid section;
 - applies query defaults and account-switch-key settings;
+- merges command-supplied HTTP headers case-insensitively over API defaults;
 - signs and sends requests through `akamai-edgegrid`;
 - parses JSON response bodies while preserving non-JSON bodies;
 - returns status code, headers, and body;

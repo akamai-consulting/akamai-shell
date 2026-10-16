@@ -48,27 +48,27 @@ function moduleForMethod(method, apiPath) {
   return apiModule;
 }
 
-function get(settings, apiPath, query, requestGet) {
+function get(settings, apiPath, query, requestGet, headers) {
   const apiModule = moduleForMethod('GET', apiPath);
   settings.logger?.debug('API module selected', { module: apiModule.name, method: 'GET', path: apiPath });
-  return apiModule.get(settings, apiPath, query, requestGet);
+  return apiModule.get(settings, apiPath, query, requestGet, headers);
 }
 
-function dispatch(method, settings, apiPath, query = {}, body, requestMethod) {
+function dispatch(method, settings, apiPath, query = {}, body, requestMethod, headers) {
   const apiModule = moduleForMethod(method, apiPath);
   settings.logger?.debug('API module selected', {
     module: apiModule.name, method: method.toUpperCase(), path: apiPath
   });
   return apiModule
-    .dispatch(settings, apiPath, method, query, body, requestMethod);
+    .dispatch(settings, apiPath, method, query, body, requestMethod, headers);
 }
 
-function post(settings, apiPath, query, body, requestMethod) {
-  return dispatch('POST', settings, apiPath, query, body, requestMethod);
+function post(settings, apiPath, query, body, requestMethod, headers) {
+  return dispatch('POST', settings, apiPath, query, body, requestMethod, headers);
 }
 
-function put(settings, apiPath, query, body, requestMethod) {
-  return dispatch('PUT', settings, apiPath, query, body, requestMethod);
+function put(settings, apiPath, query, body, requestMethod, headers) {
+  return dispatch('PUT', settings, apiPath, query, body, requestMethod, headers);
 }
 
 async function completeMethod(method, apiPath, settings, cache, requestGet) {

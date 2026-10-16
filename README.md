@@ -258,7 +258,7 @@ CommonJS `require()` is the supported module-loading mechanism.
 
 | Command | Behavior |
 | --- | --- |
-| `get <api-path> [name==value ...]` | Authenticated GET. Query arguments use `name==value`. |
+| `get <api-path> [arguments ...]` | Authenticated GET with optional query parameters and headers. |
 | `get -f <file> <api-path> ...` | Write formatted response JSON to `<file>` instead of the terminal. |
 | `post <api-path> [arguments ...]` | Authenticated JSON POST. |
 | `put <api-path> [arguments ...]` | Authenticated JSON PUT. |
@@ -272,12 +272,18 @@ HTTPie-style arguments use these operators:
 name==value       query parameter
 name=value        string JSON body field
 name:=value       JSON-decoded body field
+Name:Value        HTTP request header
 ```
+
+Quote a header argument when its value contains spaces. Custom headers override
+the corresponding default header case-insensitively while preserving unrelated
+API-specific headers.
 
 For example:
 
 ```text
 get /papi/v1/properties groupId==grp_YOUR_GROUP_ID
+get /cps/v2/enrollments 'Accept: application/vnd.akamai.cps.enrollments.v11+json'
 post /edge-diagnostics/v1/curl url=https://example.test timeout:=30 enabled:=true
 put -v "$payload" /some/path name=updated
 ```
