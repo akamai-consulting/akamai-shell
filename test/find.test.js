@@ -2,9 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { PassThrough } = require('node:stream');
 const { parseMatchRule, matchesRule, findResources } = require('../src/find');
-const { createRepl, parseFindArguments } = require('../src/repl');
 
 test('parses find query match forms', () => {
   assert.deepEqual(parseMatchRule('propertyName=tai-log-00'), {
@@ -36,21 +34,6 @@ test('matches exact and substring field/value criteria', () => {
   assert.equal(matchesRule(resource, parseMatchRule('~Name=tai-log-00')), true);
   assert.equal(matchesRule(resource, parseMatchRule('~=tai-log-00')), true);
   assert.equal(matchesRule(resource, parseMatchRule('~=tai-log')), false);
-});
-
-test('parses find path and query option', () => {
-  assert.deepEqual(parseFindArguments(['/papi/v1/properties', '-q', 'propertyName=demo']), {
-    path: '/papi/v1/properties',
-    query: 'propertyName=demo'
-  });
-  assert.throws(() => parseFindArguments(['/papi/v1/properties']), /Usage: find/);
-});
-
-test('completes find API paths', async () => {
-  const repl = createRepl(new PassThrough(), new PassThrough());
-  const [candidates] = await repl.complete('find /papi/v1/pro');
-  assert.ok(candidates.includes('/papi/v1/products'));
-  repl.rl.close();
 });
 
 test('scans one property collection response without fetching details', async () => {

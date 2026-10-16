@@ -242,10 +242,9 @@ frontend result handling; a new API should cover routing, method rejection,
 request construction, response parsing, and completion. Preserve the
 CommonJS module format and keep `src/main.js` as the executable entry point.
 
-`src/repl.js` and `src/script-runner.js` contain the earlier in-process REPL
-implementation. The active executable path is `main.js -> client.js ->
-backend.js`; do not add new behavior to the legacy path unless it is
-intentionally being revived or removed.
+The earlier in-process REPL implementation (`src/repl.js` and
+`src/script-runner.js`) has been removed now that the active executable path
+(`main.js -> client.js -> backend.js`) has fully replaced it.
 
 ## Future directions
 
@@ -267,8 +266,6 @@ support matrix changes.
   remain clearly separate from secrets.
 - Establish a deliberate policy for additional mutation methods, including
   confirmation, dry-run behavior, and activation/deactivation safety.
-- Remove or formally deprecate the legacy in-process REPL modules after
-  downstream users and tests no longer depend on them.
 
 ### Implementation directions
 
