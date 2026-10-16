@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const apiRegistry = require('../src/api-registry');
 const cps = require('../src/apis/cps');
+const transport = require('../src/edgegrid-transport');
 
 test('discovers CPS v2 with its documented supported methods', () => {
   assert.equal(apiRegistry.moduleFor('/cps/v2/enrollments').name, 'CPS');
@@ -55,6 +56,45 @@ test('forwards request header overrides through CPS GET routing', async () => {
     query: {},
     headers
   });
+});
+
+test('defaults CPS Accept to the operation media type and newest matching input type', async () => {
+  const requests = [];
+  const originalRequestMethod = transport.requestMethod;
+  transport.requestMethod = (...args) => {
+    requests.push(args);
+    return { statusCode: 200, body: {} };
+  };
+  try {
+    await apiRegistry.get({}, '/cps/v2/enrollments', {});
+    await apiRegistry.get({}, '/cps/v2/enrollments/42', {});
+    await apiRegistry.get(
+      {}, '/cps/v2/enrollments/42/changes/7/input/info/change-management-info', {});
+    await apiRegistry.get(
+      {}, '/cps/v2/enrollments/42/changes/7/input/info/lets-encrypt-challenges', {});
+    await apiRegistry.get(
+      {}, '/cps/v2/enrollments/42/changes/7/input/info/post-verification-warnings', {});
+    await apiRegistry.get(
+      {}, '/cps/v2/enrollments/42/changes/7/input/info/pre-verification-warnings', {});
+    await apiRegistry.get(
+      {}, '/cps/v2/enrollments/42/changes/7/input/info/third-party-csr', {});
+    await apiRegistry.get(
+      {}, '/cps/v2/enrollments', {}, undefined, { accept: 'application/custom+json' });
+  } finally {
+    transport.requestMethod = originalRequestMethod;
+  }
+
+  assert.deepEqual(requests.map((request) => request[7].Accept), [
+    'application/vnd.akamai.cps.enrollments.v11+json',
+    'application/vnd.akamai.cps.enrollment.v11+json',
+    'application/vnd.akamai.cps.change-management-info.v5+json',
+    'application/vnd.akamai.cps.dv-challenges.v2+json',
+    'application/vnd.akamai.cps.warnings.v1+json',
+    'application/vnd.akamai.cps.warnings.v1+json',
+    'application/vnd.akamai.cps.csr.v2+json',
+    'application/vnd.akamai.cps.enrollments.v11+json'
+  ]);
+  assert.deepEqual(requests[7][8], { accept: 'application/custom+json' });
 });
 
 test('completes enrollment and pending change identifiers using cached lookups', async () => {
