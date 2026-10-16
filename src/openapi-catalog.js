@@ -106,6 +106,9 @@ function loadOpenApiCatalog({ service, filePath } = {}) {
           schema: resolveSchema(document, schema)
         }))
         : [];
+      const responseContentTypes = [...new Set(Object.entries(operation.responses || {})
+        .filter(([status]) => /^2\d\d$/.test(status))
+        .flatMap(([, response]) => Object.keys(response.content || {})))];
       const queries = [...new Set(parameters
         .filter((parameter) => parameter.in === 'query' && parameter.name)
         .map((parameter) => parameter.name))];
@@ -125,6 +128,7 @@ function loadOpenApiCatalog({ service, filePath } = {}) {
         method: normalizedMethod,
         path: endpoint,
         queryParameters: queries,
+        responseContentTypes,
         parameters: [...parameters, ...bodyParameters]
       });
     }

@@ -277,7 +277,9 @@ Name:Value        HTTP request header
 
 Quote a header argument when its value contains spaces. Custom headers override
 the corresponding default header case-insensitively while preserving unrelated
-API-specific headers.
+API-specific headers. CPS requests choose an operation-specific `Accept` value
+from the OpenAPI response media types by default; for CPS input-info paths, the
+newest compatible type is selected from the final path segment.
 
 For example:
 
