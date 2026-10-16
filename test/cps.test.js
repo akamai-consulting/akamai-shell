@@ -37,6 +37,26 @@ test('routes CPS requests without changing the service-relative path', async () 
   assert.equal(response.statusCode, 202);
 });
 
+test('forwards request header overrides through CPS GET routing', async () => {
+  let request;
+  const headers = {
+    Accept: 'application/vnd.akamai.cps.enrollments.v11+json'
+  };
+  await apiRegistry.get(
+    {}, '/cps/v2/enrollments', {}, async (settings, path, query, requestHeaders) => {
+      request = { settings, path, query, headers: requestHeaders };
+      return { statusCode: 200, body: { enrollments: [] } };
+    }, headers
+  );
+
+  assert.deepEqual(request, {
+    settings: {},
+    path: '/enrollments',
+    query: {},
+    headers
+  });
+});
+
 test('completes enrollment and pending change identifiers using cached lookups', async () => {
   const cache = new Map();
   let requests = 0;

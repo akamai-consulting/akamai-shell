@@ -13,6 +13,16 @@ function parseBody(body) {
   }
 }
 
+function mergeHeaders(defaultHeaders = {}, overrides = {}) {
+  const headers = { ...defaultHeaders };
+  for (const [name, value] of Object.entries(overrides || {})) {
+    const existingName = Object.keys(headers)
+      .find((headerName) => headerName.toLowerCase() === name.toLowerCase());
+    headers[existingName || name] = value;
+  }
+  return headers;
+}
+
 function normalizePath(apiPath) {
   if (!apiPath || !apiPath.startsWith('/')) {
     throw new Error('API path must start with "/"');
@@ -52,12 +62,15 @@ function send(client, request) {
 }
 
 async function request(settings, apiPath, query = {}, clientFactory = createClient,
-  prefix = '', headers = { Accept: 'application/json' }) {
-  return requestMethod(settings, apiPath, 'GET', query, undefined, clientFactory, prefix, headers);
+  prefix = '', headers = { Accept: 'application/json' }, headerOverrides) {
+  return requestMethod(
+    settings, apiPath, 'GET', query, undefined, clientFactory, prefix, headers, headerOverrides
+  );
 }
 
 async function requestMethod(settings, apiPath, method, query = {}, body,
-  clientFactory = createClient, prefix = '', headers = { Accept: 'application/json' }) {
+  clientFactory = createClient, prefix = '', headers = { Accept: 'application/json' },
+  headerOverrides) {
   const normalizedPath = normalizePath(apiPath);
   const normalizedMethod = String(method || '').toUpperCase();
   if (!normalizedMethod) throw new Error('HTTP method is required');
@@ -66,9 +79,9 @@ async function requestMethod(settings, apiPath, method, query = {}, body,
   if (target.accountSwitchKey && qs.accountSwitchKey === undefined) {
     qs.accountSwitchKey = target.accountSwitchKey;
   }
-  const requestHeaders = { ...headers };
-  if (body !== undefined && requestHeaders['Content-Type'] === undefined &&
-      requestHeaders['content-type'] === undefined) {
+  const requestHeaders = mergeHeaders(headers, headerOverrides);
+  if (body !== undefined && !Object.keys(requestHeaders)
+    .some((name) => name.toLowerCase() === 'content-type')) {
     requestHeaders['Content-Type'] = 'application/json';
   }
   const request = {
@@ -120,5 +133,6 @@ module.exports = {
   normalizePath,
   send,
   parseBody,
+  mergeHeaders,
   createClient
 };

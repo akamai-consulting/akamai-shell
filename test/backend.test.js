@@ -137,8 +137,8 @@ test('dispatches get commands through the API registry', async () => {
 test('parses HTTPie-style query and JSON body arguments', async () => {
   const calls = [];
   const registry = {
-    dispatch: async (method, settings, apiPath, query, body) => {
-      calls.push({ method, apiPath, query, body });
+    dispatch: async (method, settings, apiPath, query, body, requestMethod, headers) => {
+      calls.push({ method, apiPath, query, body, headers });
       return { statusCode: 200, body: { ok: true } };
     }
   };
@@ -146,7 +146,7 @@ test('parses HTTPie-style query and JSON body arguments', async () => {
   input.write(JSON.stringify({
     id: 53,
     type: 'command',
-    source: 'post /example q==bar name=hello tags:=[1,2]'
+    source: "post /example q==bar name=hello tags:=[1,2] 'Accept: application/json' X-Test:compact"
   }) + '\n');
   await settle();
   await backend.queue;
@@ -154,8 +154,59 @@ test('parses HTTPie-style query and JSON body arguments', async () => {
     method: 'POST',
     apiPath: '/example',
     query: { q: 'bar' },
-    body: { name: 'hello', tags: [1, 2] }
+    body: { name: 'hello', tags: [1, 2] },
+    headers: { Accept: 'application/json', 'X-Test': 'compact' }
   });
+  await backend.shutdown();
+});
+
+test('forwards custom headers on GET commands', async () => {
+  const calls = [];
+  const registry = {
+    get: async (settings, apiPath, query, requestGet, headers) => {
+      calls.push({ apiPath, query, headers });
+      return { statusCode: 200, body: { ok: true } };
+    }
+  };
+  const { input, backend } = harness({ apiRegistry: registry });
+  input.write(JSON.stringify({
+    id: 54,
+    type: 'command',
+    source: "get /cps/v2/enrollments 'Accept: application/vnd.akamai.cps.enrollments.v11+json'"
+  }) + '\n');
+  await settle();
+  await backend.queue;
+
+  assert.deepEqual(calls[0], {
+    apiPath: '/cps/v2/enrollments',
+    query: {},
+    headers: { Accept: 'application/vnd.akamai.cps.enrollments.v11+json' }
+  });
+  await backend.shutdown();
+});
+
+test('rejects line breaks in custom HTTP header values', async () => {
+  let requests = 0;
+  const registry = {
+    get: async () => {
+      requests += 1;
+      return { statusCode: 200, body: {} };
+    }
+  };
+  const { input, messages, backend } = harness({ apiRegistry: registry });
+  input.write(JSON.stringify({
+    id: 55,
+    type: 'command',
+    source: "get /cps/v2/enrollments 'X-Test: safe\r\nInjected: value'"
+  }) + '\n');
+  await settle();
+  await backend.queue;
+
+  assert.equal(requests, 0);
+  assert.match(
+    messages.find((message) => message.id === 55 && message.type === 'error').error.message,
+    /Invalid HTTP header value/
+  );
   await backend.shutdown();
 });
 

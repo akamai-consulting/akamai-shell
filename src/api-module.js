@@ -58,21 +58,30 @@ function createApiModule({
       (part.startsWith('{') && part.endsWith('}')) || part === actual[index]);
   }
 
-  function requestApi(settings, apiPath, query, requestHandler, method = 'GET', body) {
+  function requestApi(settings, apiPath, query, requestHandler, method = 'GET', body,
+    headerOverrides) {
     settings.logger?.debug('API request dispatch', { module: name, method, path: apiPath });
+    const headerArgs = headerOverrides && Object.keys(headerOverrides).length
+      ? [headerOverrides] : [];
     if (requestHandler) {
-      if (method === 'GET') return requestHandler(settings, apiPath, query);
-      return requestHandler(settings, apiPath, query, body, method);
+      if (method === 'GET') return requestHandler(settings, apiPath, query, ...headerArgs);
+      return requestHandler(settings, apiPath, query, body, method, ...headerArgs);
     }
-    if (method === 'GET' && request) return request(settings, apiPath, query);
+    if (method === 'GET' && request) {
+      return headerArgs.length
+        ? request(settings, apiPath, query, undefined, ...headerArgs)
+        : request(settings, apiPath, query);
+    }
     if (method !== 'GET' && requestMethod) {
-      return requestMethod(settings, apiPath, method, query, body);
+      return headerArgs.length
+        ? requestMethod(settings, apiPath, method, query, body, undefined, ...headerArgs)
+        : requestMethod(settings, apiPath, method, query, body);
     }
     const headers = typeof requestHeaders === 'function'
       ? requestHeaders(settings, method, apiPath)
       : undefined;
     return transport.requestMethod(
-      settings, apiPath, method, query, body, undefined, prefix, headers
+      settings, apiPath, method, query, body, undefined, prefix, headers, headerOverrides
     );
   }
 
@@ -117,11 +126,13 @@ function createApiModule({
     supportsMethod,
     supportsCompletion,
 
-    get(settings, apiPath, query, requestGet) {
-      return requestApi(settings, relativePath(prefix, apiPath), query, requestGet, 'GET');
+    get(settings, apiPath, query, requestGet, headers) {
+      return requestApi(
+        settings, relativePath(prefix, apiPath), query, requestGet, 'GET', undefined, headers
+      );
     },
 
-    dispatch(settings, apiPath, method, query = {}, body, requestMethod) {
+    dispatch(settings, apiPath, method, query = {}, body, requestMethod, headers) {
       const normalizedMethod = method.toUpperCase();
       if (bodyRequired[normalizedMethod] !== false &&
           (normalizedMethod === 'POST' || normalizedMethod === 'PUT') &&
@@ -137,7 +148,8 @@ function createApiModule({
         query,
         requestMethod,
         normalizedMethod,
-        body
+        body,
+        headers
       );
     },
 
