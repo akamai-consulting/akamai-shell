@@ -21,7 +21,7 @@ Current repository state:
   `origin/main` by two commits.
 - `DESIGN.md`, `STATUS.md`, `README.md`, and `AGENTS.md` contain the current
   documentation set.
-- The full test suite passes: 372 tests.
+- The full test suite passes: 291 tests.
 - Existing unrelated untracked reference directories and local artifacts may
   be present. Do not stage them as project changes.
 
@@ -113,8 +113,6 @@ Current repository state:
   selection syntax.
 - ESM imports, PATCH, DELETE, activation, deactivation, and broader mutation
   confirmation workflows are unsupported.
-- `src/repl.js` and `src/script-runner.js` remain as legacy implementation
-  files. The active executable path does not use them.
 - Live API requests require valid local credentials. Credentials and
   secret-bearing responses must never be committed.
 
