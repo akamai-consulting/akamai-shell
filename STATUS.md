@@ -21,7 +21,7 @@ Current repository state:
   `origin/main` by two commits.
 - `DESIGN.md`, `STATUS.md`, `README.md`, and `AGENTS.md` contain the current
   documentation set.
-- The full test suite passes: 297 tests.
+- The full test suite passes: 302 tests.
 - Existing unrelated untracked reference directories and local artifacts may
   be present. Do not stage them as project changes.
 
@@ -51,6 +51,9 @@ Current repository state:
 - HTTPie-style query and JSON body syntax, file-backed request bodies,
   JavaScript body values, PAPI context handling, response parsing, recording,
   and redacted diagnostics.
+- Edge DNS supports documented POST and PUT operations except recordset
+  activation and zone deletion workflows; changelist submission is supported.
+  DELETE remains unsupported.
 - CPS requests use operation-specific OpenAPI response media types for default
   `Accept` headers, with user-supplied headers taking precedence.
 - Unsupported method/path combinations fail explicitly. PATCH, DELETE,

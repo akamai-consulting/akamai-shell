@@ -437,11 +437,8 @@ function parseCommand(source, valueOverride) {
   const rawPath = tokens.shift();
   const [apiPath, queryString] = rawPath.split('?', 2);
   const query = Object.fromEntries(new URLSearchParams(queryString || ''));
-  const body = value === undefined ? {} : value;
+  let body = value;
   const headers = {};
-  if (value !== undefined && body === undefined) {
-    throw new Error('-v requires a JSON value');
-  }
   for (const token of tokens) {
     const headerMatch = token.match(/^([!#$%&'*+\-.^_`|~0-9A-Za-z]+):(?![=])\s*([\s\S]*)$/);
     if (headerMatch) {
@@ -460,6 +457,7 @@ function parseCommand(source, valueOverride) {
       throw new Error(`GET query argument "${token}" must use name==value`);
     }
     else if (operator === ':=') {
+      if (body === undefined) body = {};
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
         throw new Error('Inline body arguments require -v to contain a JSON object');
       }
@@ -467,6 +465,7 @@ function parseCommand(source, valueOverride) {
         throw new Error(`Invalid JSON value for ${name}: ${error.message}`);
       }
     } else {
+      if (body === undefined) body = {};
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
         throw new Error('Inline body arguments require -v to contain a JSON object');
       }
