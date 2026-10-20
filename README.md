@@ -19,6 +19,14 @@ It is useful when you need to:
 Supported methods and paths vary by API module; unsupported combinations fail
 explicitly.
 
+## Warning
+
+Many API modules and operations have not been fully tested against live Akamai
+services. POST and PUT support is module- and path-specific: only operations
+explicitly enabled by a module can be called, and OpenAPI documentation alone
+does not guarantee that an operation is supported. Some mutation workflows
+remain intentionally disabled.
+
 ## Get started
 
 Requirements:
