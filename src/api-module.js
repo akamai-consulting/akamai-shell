@@ -134,7 +134,10 @@ function createApiModule({
 
     dispatch(settings, apiPath, method, query = {}, body, requestMethod, headers) {
       const normalizedMethod = method.toUpperCase();
-      if (bodyRequired[normalizedMethod] !== false &&
+      const requestBodyRequired = typeof bodyRequired === 'function'
+        ? bodyRequired(normalizedMethod, relativePath(prefix, apiPath))
+        : bodyRequired[normalizedMethod] !== false;
+      if (requestBodyRequired &&
           (normalizedMethod === 'POST' || normalizedMethod === 'PUT') &&
           body === undefined) {
         throw new Error(`${normalizedMethod} requires a JSON body`);
